@@ -154,3 +154,44 @@ App and test TypeScript checks, lint and documentation checks are recorded along
 These checks do not establish physical camera/mic quality, real niri screen capture,
 or native macOS/Windows behavior. On real niri, still check output/workspace/overview
 revocation safely pauses and exposes Stop, then Continue/Stop preserves the take.
+
+## Installed-package test mode
+
+Run `env KLIPPT_TEST_EXECUTABLE=/home/olle/Applications/Klippt/klippt node scripts/recording-window-flow.mjs`.
+The same default flow targets that executable on private nested niri and private KWin.
+It skips the dev build and passes no development FFmpeg, capture-helper or compositor overrides.
+The fixture still uses development Electron; Klippt itself runs its installed ASAR and bundled helpers.
+
+The hardened package disables the Node inspector, so this mode attaches Playwright to a
+loopback renderer debugging endpoint instead. It uses production preload commands and
+private KWin scripting for native window state and maximize/restore. It checks the actual
+process executable through `/proc`, requires a private desktop/profile, and quits via the
+production Quit command with exit 0. No installed fuse or security policy is changed.
+The compositor must acknowledge a reset size before the maximize baseline is measured.
+
+The PC package uses `OPENSCREEN_SYMBOL_FLOOR=host`, pinned Electron 44.9.1, and checksum-verified
+patchelf 0.18.0. The previous Whisper artifact names the old source commit; exact provenance
+checks correctly reject it. Whisper was rebuilt from pinned source for this commit with four
+CPU affinity slots, a local provenance run ID of 0, then verified through the normal staging step.
+The Vulkan build used SPIRV-Headers `496543121ce6419f23d6fa5d7194ba66c36212d2`, matching host SDK
+1.4.363.0, staged only in the work cache. This is a local PC install, not a portable release.
+
+Installed acceptance on 2026-11-04 UTC: `6a9b3c9c393787d0be55ba0f1f43d6192671cb57`
+at `~/Applications/Klippt`, backup `~/Applications/Klippt-backup-20261105-002437`.
+Installed binary, ASAR and helper manifest hashes match the staged package; launcher paths remain valid.
+The installed-package flow exited 0: split extremes and legacy recovery, camera Expand/Collapse
+and original niri placement, all recording controls, decoded Restart replacement media, then
+302,333 ms uninterrupted capture with both windows visible. Stop opened review; all three
+screen/camera/mic originals decoded completely, mic was non-silent, and replay controls passed.
+The production Quit command returned exit 0 and the private desktop stopped cleanly.
+Two package-isolation unit tests, lint and documentation checks passed. The Studio screenshot
+was inspected. Logs and hashes: `~/.cache/klippt-work/webcam-restore/installed-flow.log`,
+`installed.json`; private fixture media: `~/.cache/klippt-work/window-flows/run-2qgAru/`.
+
+The installed package's fixed windows declined compositor maximize in nested niri and KWin;
+those round trips preserve compact bounds, but do not prove a native maximized state transition.
+The dev-build native maximize tests remain separately recorded above. Electron's hardened
+package does not expose Chromium's Browser window-bounds protocol or the Node inspector;
+neither protection was relaxed for testing. App Expand/Collapse and bar replay expansion
+were exercised through the actual installed controls. Real niri screencast isolation/revocation,
+physical devices and native macOS/Windows behavior remain outside this private proof.

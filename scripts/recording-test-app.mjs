@@ -1,0 +1,166 @@
+import assert from "node:assert/strict";
+import { execFileSync, spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { createWriteStream } from "node:fs";
+import { readFile, realpath, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { _electron, chromium } from "@playwright/test";
+
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+export function recordingTestTarget(root, env = process.env) {
+	const executablePath = env.KLIPPT_TEST_EXECUTABLE;
+	return executablePath
+		? { executablePath: path.resolve(executablePath), args: [] }
+		: { executablePath: path.join(root, "node_modules/electron/dist/electron"), args: [root] };
+}
+
+async function kwinWindow(title, action, pid, directory) {
+	assert(process.env.AGENT_LAB_RUNTIME, "Compositor operations require a private desktop");
+	const tag = `klippt-test-${randomUUID()}`;
+	const source = path.join(directory, `${tag}.js`);
+	await writeFile(
+		source,
+		`const w=workspace.stackingOrder.find(w=>w.caption===${JSON.stringify(title)} && w.pid===${pid});
+ if(w){ ${action === "maximize" ? "w.setMaximize(true,true);" : action === "unmaximize" ? "w.setMaximize(false,false);" : ""}
+ console.log(${JSON.stringify(tag + " ")}+JSON.stringify({bounds:{x:w.frameGeometry.x,y:w.frameGeometry.y,width:w.frameGeometry.width,height:w.frameGeometry.height},visible:!w.minimized && !w.hidden,maximized:w.maximizeMode===3}));
+ }else console.log(${JSON.stringify(tag + " null")});`,
+	);
+	const dbus = (args) =>
+		execFileSync("qdbus6", ["org.kde.KWin", ...args], { encoding: "utf8" }).trim();
+	const id = dbus(["/Scripting", "loadScript", source, tag]);
+	try {
+		dbus([`/Scripting/Script${id}`, "org.kde.kwin.Script.run"]);
+		for (let i = 0; i < 40; i++) {
+			const log = execFileSync(
+				"journalctl",
+				[
+					"--user",
+					"-u",
+					`agent-lab-${path.basename(process.env.AGENT_LAB_RUNTIME)}.service`,
+					"-n",
+					"100",
+					"--no-pager",
+					"-o",
+					"json",
+				],
+				{ encoding: "utf8" },
+			);
+			const message = log
+				.split("\n")
+				.filter(Boolean)
+				.map((line) => JSON.parse(line).MESSAGE)
+				.find((m) => typeof m === "string" && m.startsWith(tag + " "));
+			if (message) {
+				const result = JSON.parse(message.slice(tag.length + 1));
+				if (action === "isVisible") return !!result?.visible;
+				assert(result, `Missing private native window ${title}`);
+				return action === "getBounds" ? result.bounds : result.maximized;
+			}
+			await delay(50);
+		}
+		throw new Error("Private compositor did not report window state");
+	} finally {
+		dbus(["/Scripting", "unloadScript", tag]);
+	}
+}
+
+export async function launchRecordingTestApp(root, args, env) {
+	const target = recordingTestTarget(root, env);
+	if (!env.KLIPPT_TEST_EXECUTABLE) {
+		const app = await _electron.launch({ ...target, args: [...target.args, ...args], env });
+		app.nativeWindow = (title, action) =>
+			app.evaluate(
+				({ BrowserWindow }, { title, action }) => {
+					const w = BrowserWindow.getAllWindows().find((w) => w.getTitle() === title);
+					return w[action]();
+				},
+				{ title, action },
+			);
+		app.abort = () =>
+			app
+				.evaluate(({ app }) => app.exit(0))
+				.catch((error) => console.log("Private app closed:", error.message));
+		return app;
+	}
+	assert(env.AGENT_LAB_RUNTIME, "Packaged tests require a private desktop");
+	assert(
+		env.ELECTRON_USER_DATA_DIR.startsWith(env.KLIPPT_WINDOW_TEST_DIR + path.sep),
+		"Private profile required",
+	);
+	const clean = { ...env };
+	for (const key of [
+		"OPENSCREEN_FFMPEG_PATH",
+		"OPENSCREEN_COMPOSITOR_VIEW_NODE",
+		"OPENSCREEN_LINUX_CURSOR_HELPER_EXE",
+		"ELECTRON_RUN_AS_NODE",
+		"NODE_OPTIONS",
+	])
+		delete clean[key];
+	await realpath(target.executablePath);
+	const child = spawn(
+		target.executablePath,
+		[...args, "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0"],
+		{ env: clean, stdio: ["ignore", "pipe", "pipe"] },
+	);
+	const log = createWriteStream(path.join(env.KLIPPT_WINDOW_TEST_DIR, `packaged-${child.pid}.log`));
+	child.stdout.pipe(log);
+	child.stderr.pipe(log);
+	const exited = new Promise((resolve) =>
+		child.once("exit", (code, signal) => resolve({ code, signal })),
+	);
+	let browser;
+	let aborted = false;
+	try {
+		let port;
+		for (let i = 0; i < 200; i++) {
+			if (child.exitCode !== null) throw new Error(`Packaged app exited ${child.exitCode}`);
+			try {
+				port = (
+					await readFile(path.join(env.ELECTRON_USER_DATA_DIR, "DevToolsActivePort"), "utf8")
+				).split("\n")[0];
+			} catch {
+				port = undefined;
+			}
+			if (port) break;
+			await delay(100);
+		}
+		assert(port, "Packaged renderer debugger did not start; fuses remain unchanged");
+		assert.equal(await realpath(`/proc/${child.pid}/exe`), await realpath(target.executablePath));
+		browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+		console.log("Testing installed executable", target.executablePath, "PID", child.pid);
+		return {
+			windows: () => browser.contexts().flatMap((context) => context.pages()),
+			process: () => child,
+			nativeWindow: (title, action) =>
+				kwinWindow(title, action, child.pid, env.KLIPPT_WINDOW_TEST_DIR),
+			abort: async () => {
+				aborted = true;
+				child.kill("SIGTERM");
+				await exited;
+			},
+			close: async () => {
+				if (child.exitCode === null && child.signalCode === null) {
+					const page = browser.contexts().flatMap((c) => c.pages())[0];
+					await page
+						.evaluate(() => window.electronAPI.quitApp())
+						.catch((error) => console.log("Private app closed:", error.message));
+					const result = await Promise.race([exited, delay(15000).then(() => null)]);
+					if (!result) {
+						child.kill("SIGTERM");
+						await exited;
+						throw new Error("Installed app did not quit cleanly");
+					}
+					assert.equal(result.code, 0, "Installed app quit failed");
+				}
+				if (!aborted) assert.equal(child.exitCode, 0, "Installed app exited unexpectedly");
+				await browser.close();
+				log.end();
+			},
+		};
+	} catch (error) {
+		child.kill("SIGTERM");
+		await exited;
+		log.end();
+		throw error;
+	}
+}

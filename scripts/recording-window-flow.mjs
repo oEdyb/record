@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron } from "@playwright/test";
+import { launchRecordingTestApp, recordingTestTarget } from "./recording-test-app.mjs";
 import { acquireRecordingTestLock } from "./recording-test-lock.mjs";
 
 function verifyClip(clip) {
@@ -55,7 +56,7 @@ if (!process.argv.includes("--worker")) {
 	const run = await mkdtemp(path.join(base, "run-"));
 	const lab = `klippt-windows-${process.pid}`;
 	try {
-		if (!process.argv.includes("--built"))
+		if (!process.argv.includes("--built") && !process.env.KLIPPT_TEST_EXECUTABLE)
 			execFileSync("npm", ["run", "build-vite"], { cwd: root, stdio: "inherit" });
 		execFileSync("agent-lab", ["start", lab], { stdio: "inherit" });
 		execFileSync(
@@ -66,6 +67,7 @@ if (!process.argv.includes("--worker")) {
 				"--",
 				"env",
 				`KLIPPT_WINDOW_TEST_DIR=${run}`,
+				`KLIPPT_TEST_EXECUTABLE=${process.env.KLIPPT_TEST_EXECUTABLE ?? ""}`,
 				"node",
 				"scripts/recording-window-niri.mjs",
 			],
@@ -80,9 +82,14 @@ if (!process.argv.includes("--worker")) {
 					"--",
 					"env",
 					`KLIPPT_WINDOW_TEST_DIR=${run}`,
-					`OPENSCREEN_FFMPEG_PATH=${process.env.OPENSCREEN_FFMPEG_PATH ?? "/usr/bin/ffmpeg"}`,
-					`OPENSCREEN_COMPOSITOR_VIEW_NODE=${process.env.KLIPPT_TEST_COMPOSITOR_VIEW_NODE ?? process.env.OPENSCREEN_COMPOSITOR_VIEW_NODE ?? ""}`,
-					`OPENSCREEN_LINUX_CURSOR_HELPER_EXE=${process.env.OPENSCREEN_LINUX_CURSOR_HELPER_EXE ?? path.join(root, "electron/native/pipewire-capture/build/openscreen-pipewire-helper")}`,
+					`KLIPPT_TEST_EXECUTABLE=${process.env.KLIPPT_TEST_EXECUTABLE ?? ""}`,
+					...(process.env.KLIPPT_TEST_EXECUTABLE
+						? []
+						: [
+								`OPENSCREEN_FFMPEG_PATH=${process.env.OPENSCREEN_FFMPEG_PATH ?? "/usr/bin/ffmpeg"}`,
+								`OPENSCREEN_COMPOSITOR_VIEW_NODE=${process.env.KLIPPT_TEST_COMPOSITOR_VIEW_NODE ?? process.env.OPENSCREEN_COMPOSITOR_VIEW_NODE ?? ""}`,
+								`OPENSCREEN_LINUX_CURSOR_HELPER_EXE=${process.env.OPENSCREEN_LINUX_CURSOR_HELPER_EXE ?? path.join(root, "electron/native/pipewire-capture/build/openscreen-pipewire-helper")}`,
+							]),
 					"node",
 					fileURLToPath(import.meta.url),
 					"--worker",
@@ -190,21 +197,20 @@ w.loadURL('data:text/html,'+encodeURIComponent('<title>Private recording fixture
 	});
 	await fixture.firstWindow();
 
-	const app = await _electron.launch({
-		executablePath: path.join(root, "node_modules/electron/dist/electron"),
-		args: [
-			root,
+	const app = await launchRecordingTestApp(
+		root,
+		[
 			"--ozone-platform=wayland",
 			"--use-fake-device-for-media-stream",
 			"--use-fake-ui-for-media-stream",
 		],
-		env: {
+		{
 			...process.env,
 			ELECTRON_USER_DATA_DIR: path.join(run, "profile"),
 			KLIPPT_AGENT_SOCKET: "off",
 			TMPDIR: run,
 		},
-	});
+	);
 	let completed = false;
 	try {
 		const page = async (type) => {
@@ -350,28 +356,25 @@ w.loadURL('data:text/html,'+encodeURIComponent('<title>Private recording fixture
 		await camera.getByTestId("camera-preview-resize").dblclick();
 		await camera.waitForFunction(() => innerWidth === 312);
 		for (const title of ["Klippt Camera", "Klippt"]) {
-			const before = await app.evaluate(
-				({ BrowserWindow }, title) =>
-					BrowserWindow.getAllWindows()
-						.find((w) => w.getTitle() === title)
-						.getBounds(),
-				title,
+			const targetPage = title === "Klippt Camera" ? camera : hud;
+			let before;
+			for (let i = 0; i < 40; i++) {
+				before = await app.nativeWindow(title, "getBounds");
+				const viewport = await targetPage.evaluate(() => ({
+					width: innerWidth,
+					height: innerHeight,
+				}));
+				if (before.width === viewport.width && before.height === viewport.height) break;
+				await delay(100);
+			}
+			assert.deepEqual(
+				{ width: before.width, height: before.height },
+				await targetPage.evaluate(() => ({ width: innerWidth, height: innerHeight })),
+				"Compositor did not settle before maximize",
 			);
-			await app.evaluate(
-				({ BrowserWindow }, title) =>
-					BrowserWindow.getAllWindows()
-						.find((w) => w.getTitle() === title)
-						.maximize(),
-				title,
-			);
+			await app.nativeWindow(title, "maximize");
 			await delay(300);
-			const maximized = await app.evaluate(
-				({ BrowserWindow }, title) =>
-					BrowserWindow.getAllWindows()
-						.find((w) => w.getTitle() === title)
-						.isMaximized(),
-				title,
-			);
+			const maximized = await app.nativeWindow(title, "isMaximized");
 
 			if (title === "Klippt Camera" && maximized) {
 				await camera.getByRole("button", { name: "Collapse camera preview", exact: true }).click();
@@ -383,13 +386,7 @@ w.loadURL('data:text/html,'+encodeURIComponent('<title>Private recording fixture
 				await hud.getByTestId("hud-device-settings").waitFor();
 				await delay(300);
 			}
-			await app.evaluate(
-				({ BrowserWindow }, title) =>
-					BrowserWindow.getAllWindows()
-						.find((w) => w.getTitle() === title)
-						.unmaximize(),
-				title,
-			);
+			await app.nativeWindow(title, "unmaximize");
 			await delay(500);
 
 			if (title === "Klippt" && maximized) {
@@ -404,13 +401,7 @@ w.loadURL('data:text/html,'+encodeURIComponent('<title>Private recording fixture
 				await hud.getByTestId("launch-device-settings-button").click();
 				await delay(500);
 			}
-			const after = await app.evaluate(
-				({ BrowserWindow }, title) =>
-					BrowserWindow.getAllWindows()
-						.find((w) => w.getTitle() === title)
-						.getBounds(),
-				title,
-			);
+			const after = await app.nativeWindow(title, "getBounds");
 			assert.equal(after.width, before.width, `${title} did not restore width`);
 			assert.equal(after.height, before.height, `${title} did not restore height`);
 			console.log(
@@ -436,11 +427,7 @@ w.loadURL('data:text/html,'+encodeURIComponent('<title>Private recording fixture
 		await hud.getByRole("switch", { name: "Camera monitor", exact: true }).click();
 		await camera.waitForFunction(() => document.visibilityState === "visible");
 		assert(
-			await app.evaluate(({ BrowserWindow }) =>
-				BrowserWindow.getAllWindows()
-					.find((w) => w.getTitle() === "Klippt Camera")
-					.isVisible(),
-			),
+			await app.nativeWindow("Klippt Camera", "isVisible"),
 			"Camera did not recover after Hide",
 		);
 		await hud.getByTestId("launch-device-settings-button").click();
@@ -513,8 +500,8 @@ w.loadURL('data:text/html,'+encodeURIComponent('<title>Private recording fixture
 		await hud.getByTestId("launch-device-settings-button").click();
 		await settings.getByRole("button", { name: "Hide HUD", exact: true }).click();
 		const activate = spawn(
-			path.join(root, "node_modules/electron/dist/electron"),
-			[root, "--ozone-platform=wayland"],
+			recordingTestTarget(root).executablePath,
+			[...recordingTestTarget(root).args, "--ozone-platform=wayland"],
 			{
 				env: {
 					...process.env,
@@ -532,14 +519,7 @@ w.loadURL('data:text/html,'+encodeURIComponent('<title>Private recording fixture
 			);
 		});
 		for (let i = 0; i < 100; i++) {
-			if (
-				await app.evaluate(({ BrowserWindow }) =>
-					BrowserWindow.getAllWindows()
-						.find((w) => w.getTitle() === "Klippt")
-						.isVisible(),
-				)
-			)
-				break;
+			if (await app.nativeWindow("Klippt", "isVisible")) break;
 			await delay(100);
 		}
 		if (await settings.isVisible()) await hud.getByTestId("launch-device-settings-button").click();
@@ -552,22 +532,8 @@ w.loadURL('data:text/html,'+encodeURIComponent('<title>Private recording fixture
 			assert.equal((await snapshot())?.phase, "recording", "Take stopped unexpectedly");
 			assert(!hud.isClosed(), "HUD closed");
 			assert(!camera.isClosed(), "Camera window closed");
-			assert(
-				await app.evaluate(({ BrowserWindow }) =>
-					BrowserWindow.getAllWindows()
-						.find((w) => w.getTitle() === "Klippt")
-						.isVisible(),
-				),
-				"Recording bar unexpectedly hidden",
-			);
-			assert(
-				await app.evaluate(({ BrowserWindow }) =>
-					BrowserWindow.getAllWindows()
-						.find((w) => w.getTitle() === "Klippt Camera")
-						.isVisible(),
-				),
-				"Camera unexpectedly hidden",
-			);
+			assert(await app.nativeWindow("Klippt", "isVisible"), "Recording bar unexpectedly hidden");
+			assert(await app.nativeWindow("Klippt Camera", "isVisible"), "Camera unexpectedly hidden");
 			if (Math.floor((Date.now() - started) / 1000) % 60 < 10)
 				console.log("recording seconds", Math.floor((Date.now() - started) / 1000));
 		}
@@ -629,9 +595,7 @@ w.loadURL('data:text/html,'+encodeURIComponent('<title>Private recording fixture
 	} finally {
 		console.log("closing private app");
 		if (!completed)
-			await app
-				.evaluate(({ app }) => app.exit(0))
-				.catch((error) => console.log("Private app exited:", error.message));
+			await app.abort().catch((error) => console.log("Private app exited:", error.message));
 		await app.close();
 		await fixture.close();
 	}

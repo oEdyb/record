@@ -3,7 +3,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
-import { _electron } from "@playwright/test";
+import { launchRecordingTestApp } from "./recording-test-app.mjs";
 
 assert(process.env.AGENT_LAB_RUNTIME, "Niri tests require a private agent-lab");
 const root = process.cwd();
@@ -32,17 +32,16 @@ try {
 	};
 	const niri = (args) => execFileSync("niri", ["msg", ...args], { env, encoding: "utf8" });
 	const windows = () => JSON.parse(niri(["-j", "windows"]));
-	app = await _electron.launch({
-		executablePath: path.join(root, "node_modules/electron/dist/electron"),
-		args: [
-			root,
+	app = await launchRecordingTestApp(
+		root,
+		[
 			"--ozone-platform=wayland",
 			"--class=co.dyberg.klippt",
 			"--use-fake-device-for-media-stream",
 			"--use-fake-ui-for-media-stream",
 		],
 		env,
-	});
+	);
 	let hud;
 	for (let i = 0; i < 100; i++) {
 		hud = app.windows().find((p) => p.url().includes("hud-overlay"));
@@ -135,11 +134,9 @@ try {
 	await camera.screenshot({ path: path.join(run, "niri-camera-restored.png") });
 	console.log("PASS private niri camera Expand/Collapse restores original position", before);
 } finally {
-	if (app) {
-		await app
-			.evaluate(({ app }) => app.exit(0))
-			.catch((error) => console.log("Private app exited:", error.message));
-		await app.close();
+	try {
+		if (app) await app.close();
+	} finally {
+		nested.kill("SIGTERM");
 	}
-	nested.kill("SIGTERM");
 }
