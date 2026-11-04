@@ -1709,7 +1709,6 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		if (
 			recordingStartPending.current ||
 			sourceSelectionInFlight.current ||
-			recording ||
 			nativeMacRecording.current ||
 			nativeWindowsRecording.current ||
 			screenRecorder.current

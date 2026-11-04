@@ -2233,3 +2233,28 @@ describe("useScreenRecorder camera files after Stop", () => {
 		await expect(readFile(cameraPath)).rejects.toMatchObject({ code: "ENOENT" });
 	});
 });
+
+it.each(["win32", "darwin", "linux"])("restarts the active native take on %s", async (platform) => {
+	let id = 7;
+	const start = vi.fn(async () => ({ success: true, recordingId: id++ }));
+	stubElectronAPI({
+		getPlatform: vi.fn(() => platform),
+		isNativeMacCaptureAvailable: vi.fn(async () => ({ success: true, available: true })),
+		isNativeLinuxCaptureAvailable: vi.fn(async () => ({ success: true, available: true })),
+		prepareNativeLinuxRecording: vi.fn(async () => ({ success: true, recordingId: id })),
+		startNativeWindowsRecording: start,
+		startNativeMacRecording: start,
+		stopNativeMacRecording: vi.fn(async () => ({ success: true, discarded: true })),
+	});
+	const view = renderHook(() => useScreenRecorder());
+	await act(async () => {
+		await view.result.current.startRecordingImmediately();
+	});
+	expect(view.result.current.recording).toBe(true);
+	await act(async () => {
+		await view.result.current.restartRecording();
+	});
+	await settle(20);
+	expect(start).toHaveBeenCalledTimes(2);
+	expect(view.result.current.recording).toBe(true);
+});
