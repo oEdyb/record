@@ -226,10 +226,7 @@ export function CameraPreviewWindow() {
 	}, []);
 
 	useEffect(() => {
-		const animationFrame = window.requestAnimationFrame(() => {
-			window.electronAPI.setCameraPreviewVisible(visible);
-		});
-		return () => window.cancelAnimationFrame(animationFrame);
+		window.electronAPI.setCameraPreviewVisible(visible);
 	}, [visible]);
 
 	useEffect(

@@ -272,3 +272,21 @@ describe("CameraPreviewWindow", () => {
 		await waitFor(() => expect(setCameraPreviewVisible).toHaveBeenLastCalledWith(true));
 	});
 });
+
+it("can show a hidden monitor even when animation frames are suspended", async () => {
+	vi.spyOn(window, "requestAnimationFrame").mockReturnValue(1);
+	localStorage.setItem(
+		"openscreen_user_preferences",
+		JSON.stringify({ cameraMonitorHidden: true }),
+	);
+	render(<CameraPreviewWindow />);
+	await screen.findByTestId("camera-preview-loading");
+	act(() => {
+		localStorage.setItem(
+			"openscreen_user_preferences",
+			JSON.stringify({ cameraMonitorHidden: false }),
+		);
+		window.dispatchEvent(new StorageEvent("storage"));
+	});
+	await waitFor(() => expect(setCameraPreviewVisible).toHaveBeenLastCalledWith(true));
+});
