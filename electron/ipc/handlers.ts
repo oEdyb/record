@@ -2580,7 +2580,7 @@ export function registerIpcHandlers(
 		},
 	);
 	ipcMain.handle("cancel-native-linux-prepare", async () => {
-		linuxRecordingHud?.cancelPending();
+		if (!nativeMacRecordingService?.isCapturing()) linuxRecordingHud?.cancelPending();
 		if (process.platform === "linux") await nativeMacRecordingService?.cancelPrepare();
 		return { success: true };
 	});

@@ -384,8 +384,11 @@ async function setCameraPreviewExpanded(expanded: boolean) {
 	placeCameraPreview(cameraPreviewCompactPosition ?? undefined);
 	cameraPreviewCompactPosition = null;
 	const restore = cameraPreviewRestorePlacement;
-	await restore?.(() => generation === cameraPreviewExpansionGeneration && !win.isDestroyed());
-	if (generation === cameraPreviewExpansionGeneration) cameraPreviewRestorePlacement = undefined;
+	try {
+		await restore?.(() => generation === cameraPreviewExpansionGeneration && !win.isDestroyed());
+	} finally {
+		if (generation === cameraPreviewExpansionGeneration) cameraPreviewRestorePlacement = undefined;
+	}
 }
 
 function cameraPreviewWorkArea() {
@@ -983,6 +986,7 @@ export function createCameraPreviewWindow(): BrowserWindow {
 					console.warn("[camera-preview] native restore failed:", error),
 				);
 			} else if (!win.isDestroyed()) {
+				win.webContents.send("camera-preview-expanded-changed", false);
 				win.setBounds({ ...win.getBounds(), ...cameraPreviewCompactSize }, false);
 			}
 		});

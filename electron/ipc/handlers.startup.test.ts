@@ -836,3 +836,33 @@ describe("registerIpcHandlers startup contract", () => {
 		if (stops) expect(powerBlocker.stop).toHaveBeenCalledWith(41);
 	});
 });
+
+it("does not cancel live HUD isolation when stale Linux preparation cleanup arrives", async () => {
+	pinPlatform("linux");
+	const { NativeMacRecordingService } = await import("../recording/nativeMacRecordingService");
+	const { LinuxRecordingHud } = await import("../recording/linuxRecordingHud");
+	const capturing = vi
+		.spyOn(NativeMacRecordingService.prototype, "isCapturing")
+		.mockReturnValue(true);
+	const cancelPrepare = vi
+		.spyOn(NativeMacRecordingService.prototype, "cancelPrepare")
+		.mockResolvedValue();
+	const cancelGuard = vi
+		.spyOn(LinuxRecordingHud.prototype, "cancelPending")
+		.mockImplementation(() => undefined);
+	try {
+		const { recovery, handlers } = await register({ restoreInterruptedRecording: false });
+		await recovery;
+		cancelGuard.mockClear();
+		cancelPrepare.mockClear();
+		const cancel = handlers.get("cancel-native-linux-prepare");
+		if (!cancel) throw new Error("Cancel IPC missing");
+		await Reflect.apply(cancel, undefined, [{}]);
+		expect(cancelGuard).not.toHaveBeenCalled();
+		expect(cancelPrepare).toHaveBeenCalledOnce();
+	} finally {
+		capturing.mockRestore();
+		cancelPrepare.mockRestore();
+		cancelGuard.mockRestore();
+	}
+});

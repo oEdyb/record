@@ -402,6 +402,15 @@ describe("useScreenRecorder native Linux stop failure", () => {
 		view.unmount();
 	});
 
+	it("keeps Linux capture isolation armed after a successful normal Record", async () => {
+		const cancel = vi.fn(async () => ({ success: true }));
+		stubNativeLinux({ cancelNativeLinuxPrepare: cancel });
+		const view = renderHook(() => useScreenRecorder());
+		act(() => view.result.current.toggleRecording());
+		await settle(20);
+		expect(view.result.current.recording).toBe(true);
+		expect(cancel).not.toHaveBeenCalled();
+	});
 	it("chooses a fresh source while idle without recording or opening audio, then releases preparation", async () => {
 		const prepare = vi.fn(async () => ({ success: true, recordingId: 7 }));
 		const stop = vi.fn(async () => ({ success: true }));

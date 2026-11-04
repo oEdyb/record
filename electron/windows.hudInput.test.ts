@@ -298,3 +298,23 @@ it("collapses a compositor-maximized camera with its own control", async () => {
 		false,
 	);
 });
+
+it("remembers fresh niri placement after a completed restore fails", async () => {
+	vi.stubEnv("NIRI_SOCKET", "private-test-socket");
+	fixture.rememberPlacement
+		.mockResolvedValueOnce(vi.fn().mockRejectedValue(new Error("Private restore failed")))
+		.mockResolvedValue(undefined);
+	const { createCameraPreviewWindow } = await import("./windows");
+	createCameraPreviewWindow();
+	send("camera-preview-set-expanded", true);
+	await Promise.resolve();
+	await Promise.resolve();
+	send("camera-preview-set-expanded", false);
+	await Promise.resolve();
+	await Promise.resolve();
+	await Promise.resolve();
+	send("camera-preview-set-expanded", true);
+	await Promise.resolve();
+	await Promise.resolve();
+	expect(fixture.rememberPlacement).toHaveBeenCalledTimes(2);
+});

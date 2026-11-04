@@ -1646,6 +1646,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		pendingStartRunId.current = runId;
 		setCountdownActive(true);
 		let portalOwnsSource = false;
+		let captureStarted = false;
 
 		try {
 			const [selectedSource, portalSelection] = await Promise.all([
@@ -1686,6 +1687,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			if (!isCountdownRunActive(runId)) return;
 
 			await startRecording(runId, preparedRecordingId);
+			captureStarted = nativeMacRecording.current !== null;
 			if (!isCountdownRunActive(runId)) return;
 			if (window.electronAPI.getPlatform() !== "linux")
 				await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
@@ -1697,7 +1699,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				setCountdownActive(false);
 				await safeHideCountdownOverlay(runId);
 			}
-			if (portalOwnsSource) void window.electronAPI.cancelNativeLinuxPrepare?.();
+			if (portalOwnsSource && !captureStarted) void window.electronAPI.cancelNativeLinuxPrepare?.();
 			if (pendingStartRunId.current === runId) pendingStartRunId.current = null;
 		}
 	};
