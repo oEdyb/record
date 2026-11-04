@@ -18,6 +18,7 @@ const fixture = vi.hoisted(() => {
 		isDestroyed: () => false,
 		isVisible: () => true,
 		isMinimized: () => false,
+		isMaximized: vi.fn(() => false),
 		setContentProtection: vi.fn(),
 		showInactive: vi.fn(),
 		hide: vi.fn(),
@@ -91,6 +92,7 @@ beforeEach(async () => {
 	vi.clearAllMocks();
 	fixture.handlers.clear();
 	fixture.previewGuard.begin.mockResolvedValue(false);
+	fixture.win.isMaximized.mockReturnValue(false);
 	fixture.dimensions.width = 472;
 	fixture.dimensions.height = 112;
 	vi.stubEnv("HEADLESS", "true");
@@ -210,4 +212,18 @@ it("restores the fixed camera window with atomic bounds after expansion", async 
 		false,
 	);
 	expect(fixture.win.setPosition).toHaveBeenLastCalledWith(100, 80, false);
+});
+
+it("restores the requested recording bar size after native maximize", () => {
+	fixture.win.isMaximized.mockReturnValue(true);
+	send("hud-overlay-set-direction-exclusion-rects", [{ x: 700, y: 500, width: 424, height: 50 }]);
+	expect(fixture.win.setSize).not.toHaveBeenCalled();
+	fixture.win.isMaximized.mockReturnValue(false);
+	const restore = fixture.win.on.mock.calls.find(([event]) => event === "unmaximize")?.[1];
+	expect(restore).toBeTypeOf("function");
+	restore?.();
+	expect(fixture.win.setBounds).toHaveBeenCalledWith(
+		{ x: 100, y: 80, width: 472, height: 112 },
+		false,
+	);
 });

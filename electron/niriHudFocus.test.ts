@@ -103,3 +103,27 @@ it("restores a remapped recorder to its original monitor and floating position",
 		Action: { MoveFloatingWindow: { id: 17, x: { SetFixed: -10 }, y: { SetFixed: 765 } } },
 	});
 });
+
+it("restores the camera monitor without moving the recording bar", async () => {
+	const recorder = {
+		id: 7,
+		pid: 42,
+		app_id: "co.dyberg.klippt",
+		title: "Klippt Camera",
+		is_floating: true,
+		workspace_id: 9,
+		layout: { tile_pos_in_workspace_view: [-10, 765] },
+	};
+	replies.values = [JSON.stringify([recorder]), JSON.stringify([{ id: 9, output: "DP-3" }])];
+	const restore = await rememberNiriHudPlacement(42, "Klippt Camera");
+	expect(restore).toBeDefined();
+	replies.values = [JSON.stringify([{ ...recorder, id: 17 }]), "", ""];
+	await restore?.(() => true);
+	expect(replies.calls.slice(-2)).toEqual([
+		["msg", "-j", "windows"],
+		["msg", "action", "move-window-to-monitor", "--id", "17", "DP-3"],
+	]);
+	expect(JSON.parse(replies.writes[0])).toEqual({
+		Action: { MoveFloatingWindow: { id: 17, x: { SetFixed: -10 }, y: { SetFixed: 765 } } },
+	});
+});

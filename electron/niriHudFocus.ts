@@ -95,6 +95,7 @@ function moveFloatingWindow(id: number, x: number, y: number): Promise<void> {
 
 export async function rememberNiriHudPlacement(
 	pid: number,
+	windowTitle = "Klippt",
 ): Promise<((mayRestore: () => boolean) => Promise<void>) | undefined> {
 	if (!process.env.NIRI_SOCKET) return;
 	const owned = placementWindows
@@ -103,7 +104,7 @@ export async function rememberNiriHudPlacement(
 			(value) =>
 				value.pid === pid &&
 				value.app_id === "co.dyberg.klippt" &&
-				value.title === "Klippt" &&
+				value.title === windowTitle &&
 				value.is_floating,
 		);
 	if (owned.length !== 1 || !owned[0].layout.tile_pos_in_workspace_view) return;
@@ -122,7 +123,7 @@ export async function rememberNiriHudPlacement(
 					(value) =>
 						value.pid === pid &&
 						value.app_id === "co.dyberg.klippt" &&
-						value.title === "Klippt" &&
+						value.title === windowTitle &&
 						value.is_floating,
 				);
 			if (restored.length > 1) throw new Error("Recorder placement matched multiple windows.");

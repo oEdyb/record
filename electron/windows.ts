@@ -34,6 +34,7 @@ import { createHudPointerWatch } from "./hudPointerWatch";
 import { createTrustedRendererIpcMain } from "./ipc/trustedRendererIpc";
 import { LINUX_HUD_INITIAL_SIZE, linuxHudWindowSize } from "./linuxHudGeometry";
 import { NiriCaptureWindowGuard } from "./niriCaptureWindowGuard";
+import { rememberNiriHudPlacement } from "./niriHudFocus";
 import {
 	localRectanglesContainScreenPoint,
 	normalizePrivateUiRectangles,
@@ -155,6 +156,8 @@ let hudRendererReady = false;
 let cameraPreviewRendererReady = false;
 let cameraPreviewPortsConnected = false;
 let cameraPreviewExpanded = false;
+let cameraPreviewExpansionGeneration = 0;
+let cameraPreviewRestorePlacement: Awaited<ReturnType<typeof rememberNiriHudPlacement>>;
 // Where the compact monitor sat before it was expanded, restored on collapse.
 let cameraPreviewCompactPosition: CameraPreviewPoint | null = null;
 // The user's chosen compact size; Expand grows past it and Collapse returns to it.
@@ -162,6 +165,7 @@ let cameraPreviewCompactSize: CameraPreviewSize = { ...COMPACT_CAMERA_PREVIEW_SI
 // Window size when the current grip drag began; deltas are total pointer travel.
 let cameraPreviewResizeOrigin: CameraPreviewSize | null = null;
 let hudDirectionExclusionRectangles: PrivateUiRectangle[] = [];
+let linuxHudRequestedSize = { ...LINUX_HUD_INITIAL_SIZE };
 
 function isHudSender(senderId: number) {
 	return Boolean(
@@ -174,9 +178,10 @@ function isHudSender(senderId: number) {
 ipcMain.on("hud-overlay-set-direction-exclusion-rects", (event, rectangles: unknown) => {
 	if (!isHudSender(event.sender.id)) return;
 	hudDirectionExclusionRectangles = normalizePrivateUiRectangles(rectangles);
-	if (process.platform !== "linux" || !hudOverlayWindow) return;
+	if (process.platform !== "linux" || !hudOverlayWindow || hudOverlayWindow.isMaximized()) return;
 	const size = linuxHudWindowSize(hudDirectionExclusionRectangles);
 	if (!size) return;
+	linuxHudRequestedSize = size;
 	const [width, height] = hudOverlayWindow.getSize();
 	if (width !== size.width || height !== size.height) {
 		// Wayland owns global position. Resizing from local content must not run
@@ -332,10 +337,12 @@ export async function setCameraPreviewCaptureHidden(
 	applyCameraPreviewVisibility();
 }
 
-function setCameraPreviewExpanded(expanded: boolean) {
+async function setCameraPreviewExpanded(expanded: boolean) {
 	if (!cameraPreviewWindow || cameraPreviewWindow.isDestroyed()) return;
 	if (expanded === cameraPreviewExpanded) return;
 	cameraPreviewExpanded = expanded;
+	const generation = ++cameraPreviewExpansionGeneration;
+	const win = cameraPreviewWindow;
 	if (expanded) {
 		const [x, y] = cameraPreviewWindow.getPosition();
 		cameraPreviewCompactPosition = { x, y };
@@ -344,7 +351,17 @@ function setCameraPreviewExpanded(expanded: boolean) {
 			x: bounds.x + Math.round(bounds.width / 2),
 			y: bounds.y + Math.round(bounds.height / 2),
 		});
-		cameraPreviewWindow.setBounds(expandedCameraPreviewBounds(display.workArea), false);
+		if (process.platform === "linux" && process.env.NIRI_SOCKET) {
+			const restorePlacement = await rememberNiriHudPlacement(process.pid, "Klippt Camera").catch(
+				(error: unknown) => {
+					console.warn("[camera-preview] could not remember placement:", error);
+					return undefined;
+				},
+			);
+			if (generation !== cameraPreviewExpansionGeneration || win.isDestroyed()) return;
+			cameraPreviewRestorePlacement = restorePlacement;
+		}
+		win.setBounds(expandedCameraPreviewBounds(display.workArea), false);
 		return;
 	}
 	// setSize alone leaves Electron's fixed Wayland min/max at the expanded size.
@@ -357,6 +374,9 @@ function setCameraPreviewExpanded(expanded: boolean) {
 	);
 	placeCameraPreview(cameraPreviewCompactPosition ?? undefined);
 	cameraPreviewCompactPosition = null;
+	const restore = cameraPreviewRestorePlacement;
+	cameraPreviewRestorePlacement = undefined;
+	await restore?.(() => generation === cameraPreviewExpansionGeneration && !win.isDestroyed());
 }
 
 function cameraPreviewWorkArea() {
@@ -434,7 +454,9 @@ ipcMain.on("camera-preview-resize-end", (event) => {
 
 ipcMain.on("camera-preview-set-expanded", (event, expanded: boolean) => {
 	if (!isCameraPreviewSender(event.sender.id) || typeof expanded !== "boolean") return;
-	setCameraPreviewExpanded(expanded);
+	void setCameraPreviewExpanded(expanded).catch((error: unknown) =>
+		console.warn("[camera-preview] restore failed:", error),
+	);
 });
 
 ipcMain.on("camera-preview-set-visible", (event, visible: boolean) => {
@@ -771,6 +793,13 @@ export function createHudOverlayWindow(
 			backgroundThrottling: false,
 		},
 	});
+	if (process.platform === "linux") {
+		linuxHudRequestedSize = { width: windowWidth, height: windowHeight };
+		win.on("unmaximize", () => {
+			if (win.isDestroyed()) return;
+			win.setBounds({ ...win.getBounds(), ...linuxHudRequestedSize }, false);
+		});
+	}
 	hudRendererReady = false;
 	cameraPreviewPortsConnected = false;
 
@@ -922,6 +951,8 @@ export function createCameraPreviewWindow(): BrowserWindow {
 	cameraPreviewReady = false;
 	cameraPreviewVisible = false;
 	cameraPreviewExpanded = false;
+	cameraPreviewExpansionGeneration += 1;
+	cameraPreviewRestorePlacement = undefined;
 	cameraPreviewCompactPosition = null;
 	cameraPreviewRendererReady = false;
 	cameraPreviewPortsConnected = false;
