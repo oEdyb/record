@@ -62,7 +62,9 @@ describe("project transaction storage (not external writer ownership)", () => {
 		const snapshot = await store.read();
 		expect(snapshot.document.project.title).toBe("Agent");
 		expect(snapshot.undoRecovery?.beforeDocument.project.title).toBe("Original");
-		expect(snapshot.undoRecovery?.beforeDocument.schemaVersion).toBe(snapshot.document.schemaVersion);
+		expect(snapshot.undoRecovery?.beforeDocument.schemaVersion).toBe(
+			snapshot.document.schemaVersion,
+		);
 	});
 	it("loads old snapshots deterministically without writing or leaking metadata into document history", async () => {
 		const raw = await fs.readFile(file, "utf8");

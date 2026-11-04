@@ -8,8 +8,8 @@ import {
 	normalizeProjectEditor,
 	PROJECT_VERSION,
 	resolveProjectMedia,
-	validateProjectData,
 	toFileUrl,
+	validateProjectData,
 } from "./projectPersistence";
 
 describe("file URLs with a literal percent sign", () => {
