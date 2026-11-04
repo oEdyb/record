@@ -9,6 +9,7 @@ import { type AspectRatio, isAspectRatio } from "@/utils/aspectRatioUtils";
 const PREFS_KEY = "openscreen_user_preferences";
 
 const studioLayoutSchema = z.object({
+	version: z.literal(2).catch(2),
 	view: z.enum(["replay", "both", "camera"]).catch("both"),
 	split: z
 		.number()
@@ -139,7 +140,15 @@ export function loadUserPreferences(): UserPreferences {
 	if (!raw || typeof raw !== "object") return { ...DEFAULT_PREFS };
 
 	return {
-		studioLayout: normalizeStudioLayout(raw.studioLayout),
+		studioLayout: ((): StudioLayout => {
+			const saved = raw.studioLayout;
+			const layout = normalizeStudioLayout(saved);
+			// Old separator drags persisted replay-only as an accidental camera collapse.
+			if (saved && typeof saved === "object" && !("version" in saved) && layout.view === "replay") {
+				return { ...layout, view: "both" };
+			}
+			return layout;
+		})(),
 		padding:
 			typeof raw.padding === "number" &&
 			Number.isFinite(raw.padding) &&

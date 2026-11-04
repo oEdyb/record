@@ -238,6 +238,16 @@ describe("studio layout preference", () => {
 		expect(studioLayout.dockFrac).toBeGreaterThanOrEqual(0.18);
 		expect(studioLayout.dockFrac).toBeLessThanOrEqual(0.6);
 	});
+
+	it("recovers a legacy camera collapse and preserves new explicit views", () => {
+		localStorage.setItem(
+			"openscreen_user_preferences",
+			JSON.stringify({ studioLayout: { view: "replay" } }),
+		);
+		expect(loadUserPreferences().studioLayout.view).toBe("both");
+		saveUserPreferences({ studioLayout: { ...DEFAULT_PREFS.studioLayout, view: "replay" } });
+		expect(loadUserPreferences().studioLayout.view).toBe("replay");
+	});
 	it("persists the layout alongside existing preferences", () => {
 		saveUserPreferences({
 			studioLayout: { ...DEFAULT_PREFS.studioLayout, dock: "left", liveMode: "notes" },
