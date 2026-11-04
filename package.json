@@ -74,7 +74,7 @@
 		"clean-voice:lab": "npm run build:native:clean-voice:mac && node scripts/clean-voice-lab.mjs",
 		"test:whisper-stt": "node scripts/test-whisper-stt.mjs",
 		"test:clean-voice": "npm run build:native:clean-voice:mac && node scripts/test-clean-voice-helper.mjs --long",
-		"test": "vitest --run",
+		"test": "node scripts/run-tests.mjs",
 		"test:changed": "vitest --run --changed",
 		"test:watch": "vitest",
 		"test:cursor-native:win": "node scripts/test-windows-native-cursor.mjs",
