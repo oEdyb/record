@@ -29,3 +29,19 @@ Reference: [Electron BrowserWindow](https://www.electronjs.org/docs/latest/api/b
 (`setBounds`, `setSize`, size constraints, Linux maximize flag limitations).
 Wayland owns global placement; app bounds requests do not establish real compositor
 position restoration. Native compositor maximize/fullscreen remains a separate check.
+
+## Recording bar disappearing during capture
+
+`NiriCaptureWindowGuard` revokes visibility if output/workspace/window isolation becomes
+unsafe (including overview), or the event stream fails. Its HUD callback called
+`LinuxRecordingHud.conceal`, which hid the bar without pausing the writer. This was
+intentional capture privacy, not a timed close. Recovery previously depended on the tray
+or recording shortcuts. Mid-take conceal now requests one pause, then restores controls
+only after writer acknowledgement. Startup conceal still stays hidden while recording.
+
+This code path is reproduced by a regression that fails before and passes after the
+change. It is a supported cause, not a confirmed diagnosis of the reported incident:
+the installed process sent stdout/stderr to `/dev/null`, its journal had no app logs,
+and the inspected recent coredump list contained portal crashes but no Klippt crash.
+No user recordings were inspected. A renderer crash remains a different path:
+`main.ts` calls `stopTakeWithoutPill` to save and open review.

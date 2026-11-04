@@ -314,3 +314,17 @@ it("waits for an old placement RPC before proving a replacement capture safe", a
 	expect(window.hide).toHaveBeenCalledOnce();
 	expect(window.show).not.toHaveBeenCalled();
 });
+
+it("pauses and restores controls when isolation is lost during a take", () => {
+	const { hud, window, setCapturing } = setup();
+	setCapturing(true);
+	hud.conceal();
+	expect(window.hide).toHaveBeenCalledOnce();
+	expect(window.webContents.send).toHaveBeenCalledExactlyOnceWith("hud-toggle-recording-pause");
+	hud.conceal();
+	expect(window.webContents.send).toHaveBeenCalledTimes(1);
+	expect(window.show).not.toHaveBeenCalled();
+	setCapturing(false);
+	hud.pauseCompleted();
+	expect(window.show).toHaveBeenCalledOnce();
+});

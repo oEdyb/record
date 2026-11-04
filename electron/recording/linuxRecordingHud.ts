@@ -71,6 +71,9 @@ export class LinuxRecordingHud {
 		this.concealed = true;
 		const window = this.getWindow();
 		if (window && !window.isDestroyed()) window.hide();
+		// If isolation is revoked mid-take, return controls after an acknowledged pause.
+		// Never leave a running writer silently hidden with no visible Stop button.
+		this.requestControls();
 	}
 
 	requestControls(): boolean {
