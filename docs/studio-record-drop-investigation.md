@@ -335,3 +335,77 @@ docs checks 28 files. Private Linux desktop tests did not run on this Mac.
 The two test-only compatibility corrections preserve the existing assertions:
 use a checked session literal with definite clips, and replace `replaceAll` with
 literal split/join for the configured TypeScript library.
+
+## Continue follow-up: 400-cycle installed check
+
+On November 5, installed `96e4b1f423be230650875a655c32bd6e2a6ef9e2`
+ran 400 successful Pause/Continue cycles through real Studio button events, with
+screen, camera, microphone and system audio enabled:
+
+- 100 immediate Pause/Continue cycles in one take.
+- 100 cycles with rapid double presses on both Pause and Continue.
+- 100 varied-pause cycles: 80 × 250 ms, 10 × 1 second, 6 × 30 seconds,
+  2 × 60 seconds and 2 × 120 seconds. Long pauses exercise paused-stream throttling.
+- 50 fresh short takes, pausing their first clips at 129–398 ms, then continuing.
+- 50 more cycles after a second idle installed copy opened while the take was
+  paused. Both copies used disposable profiles, with live camera preview streams.
+
+There were zero native Continue failures. The run retained 454 screen clips in
+54 takes. Every present original from those takes fully decoded with the installed
+bundled ffprobe/FFmpeg: 1,773 files, plus all six originals from the earlier failed
+take, for 1,779 successful decodes and zero decode failures. Short clips can
+legitimately have no microphone sample before the existing startup allowance;
+this is not a claim that every short clip contains all four sources.
+
+The earlier take's saved `.session.json` supplies the terminal error that the
+bounded timing log had since evicted:
+
+```text
+writer-failed-during-capture
+Recording startup exceeded two seconds waiting for the video timeline to catch up.: AVAssetWriter status 1
+```
+
+This is the native screen timeline readiness deadline. Apple's installed SDK
+`AVAssetWriter.h` defines status 1 as writing; it is not AVAssetWriter's failed
+status. The original Continue timeline returned failure at 2,392 ms. A camera
+interruption at 397 ms and a full 32-sample microphone encoder queue at 807 ms
+preceded it; they do not establish why the screen timeline failed to catch up.
+The saved recovery session retains 132 ms and 2,000 ms clips. The latter contains
+120 screen frames at 60 fps, and both clips' six saved files fully decode.
+The underlying trigger remains unproven; this is not a reproduced-and-fixed bug.
+
+One distinct negative result occurred when a second idle copy was opened before
+starting a new take: Record returned a truthful native-start timeout after
+10,218 ms, while preserving the previous review. This happened before any
+Continue and is excluded from the Continue count. Closing the disposable copies,
+starting a take alone, then opening the second copy while paused allowed all
+50 two-instance Continues to pass. This does not establish general support for
+simultaneous app instances or explain the earlier screen catch-up timeout.
+
+Four existing `RecordingStartupTests` pass through the repository's isolated
+Swift test runner (2.019 seconds); the approved package manifest was untouched.
+A direct `swift test` attempt found no test target because the production
+manifest intentionally excludes it. The first window script also attempted an
+unavailable Record control after its 100 successful cycles; that selector timeout
+was corrected for subsequent batch setup and is not a native capture failure.
+
+No capture code, readiness policy, timeout or failure gate was changed. The
+observed result is 0/400 under these conditions, not a guarantee for other loads.
+An independent-identical-trials model would put the one-sided 95% upper limit
+at about 0.75% per cycle; these mixed, within-take cycles are correlated, so that
+model is not an established real-world failure-rate bound. A new occurrence
+needs its saved interruption and native timing, rather than an increased timeout.
+
+Private evidence: `artifacts/mac-continue-20261105/summary.json`,
+`earlier-failure.json`, `earlier-screen-probe.json`, `cycles.json`, `cycles2.json`,
+`fresh-takes.json`, `dual-paused-cycles.json`, `dual-instance-record-timeout.json`,
+`decode-results.json` and the real-window review screenshots. Runtime source
+remains unchanged by this investigation; the installation receipt records the
+final current-main build separately from the 400-cycle `96e4b1f42` dataset.
+
+Current-main integration (`078f9686c`) checks: 3,440 unit tests passed, six known
+approval-signature failures, five skips; no additional failures. Both TypeScript
+checks pass. Lint checks 971 files with the existing oversized inventory warning;
+i18n passes 12 locales/6 namespaces and docs checks 28 files. The added main
+changes include microphone-meter constraints; native Mac Pause/Continue and
+startup-policy source files are unchanged from the tested `96e4b1f42` runtime.
