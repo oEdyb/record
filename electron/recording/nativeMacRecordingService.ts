@@ -63,6 +63,7 @@ export type NativeMacCaptureHelper = Pick<
 		Pick<
 			NativeMacHelperClient,
 			| "firstFrameStartedAtMs"
+			| "clipStartedAtMs"
 			| "negotiatedCursorCaptureMode"
 			| "waitForSourceSelected"
 			| "arm"
@@ -663,7 +664,11 @@ export class NativeMacRecordingService {
 				this.clipCursorModes.set(clipIndex, this.cursorCaptureMode);
 				this.storage.rearm();
 				await this.persistRecoverySession();
-				return { success: true, clipIndex };
+				return {
+					success: true,
+					clipIndex,
+					...(helper.clipStartedAtMs !== undefined ? { startedAtMs: helper.clipStartedAtMs } : {}),
+				};
 			} catch (error) {
 				const rejectedIndex =
 					error instanceof NativeMacResumeRejectedError ? error.clipIndex : null;

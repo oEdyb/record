@@ -1666,10 +1666,10 @@ mod tests {
             let tone: Vec<f32> = (0..BLOCK)
                 .flat_map(|_| {
                     phase += 1;
-                    let sample =
-                        (phase as f32 % 48_000.0 * 440.0 * std::f32::consts::TAU / rate as f32)
-                            .sin()
-                            * 0.3;
+                    let sample = (phase as f32 % 48_000.0 * 440.0 * std::f32::consts::TAU
+                        / rate as f32)
+                        .sin()
+                        * 0.3;
                     [sample; AUDIO_CHANNELS]
                 })
                 .collect();

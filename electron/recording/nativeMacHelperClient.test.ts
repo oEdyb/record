@@ -63,6 +63,14 @@ describe("NativeMacHelperClient", () => {
 		await client.waitForStart();
 		expect(client.firstFrameStartedAtMs).toBeGreaterThanOrEqual(before);
 	});
+	it("uses the screen epoch rather than the delayed ready event", async () => {
+		const process = fakeProcess();
+		const client = new NativeMacHelperClient(process, { platform: "linux" });
+		emit(process, { event: "recording-started", timestampMs: 1400, startedAtMs: 1000 });
+		await client.waitForStart();
+		expect(client.firstFrameStartedAtMs).toBe(1000);
+	});
+
 	it("tracks the actual Linux cursor mode across source replacement", () => {
 		const process = fakeProcess();
 		const client = new NativeMacHelperClient(process, { platform: "linux" });

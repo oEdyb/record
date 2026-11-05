@@ -64,6 +64,7 @@ export class NativeMacHelperClient {
 	private fatalReported = false;
 	private recordingStarted = false;
 	firstFrameStartedAtMs: number | undefined;
+	clipStartedAtMs: number | undefined;
 	private sourceSelected = false;
 	private linuxCursorMode: CursorCaptureMode | undefined;
 	private startupError: string | null = null;
@@ -458,14 +459,16 @@ export class NativeMacHelperClient {
 		if (event.event === "source-selected") this.sourceSelected = true;
 		if (event.event === "error" && !this.recordingStarted)
 			this.startupError = this.eventError(event, "Native capture failed.");
+		if (event.event === "recording-started" || event.event === "recording-resumed") {
+			const stamp = event.startedAtMs;
+			this.clipStartedAtMs =
+				typeof stamp === "number" && Number.isFinite(stamp) && stamp > 0 ? stamp : undefined;
+		}
 		if (event.event === "recording-started" && !this.recordingStarted) {
 			this.recordingStarted = true;
+			const stamp = this.clipStartedAtMs ?? event.timestampMs;
 			this.firstFrameStartedAtMs =
-				typeof event.timestampMs === "number" &&
-				Number.isFinite(event.timestampMs) &&
-				event.timestampMs > 0
-					? event.timestampMs
-					: Date.now();
+				typeof stamp === "number" && Number.isFinite(stamp) && stamp > 0 ? stamp : Date.now();
 		}
 		if (event.event === "warning") {
 			console.warn(

@@ -167,6 +167,7 @@ pub enum Event {
     },
     #[serde(rename_all = "camelCase")]
     RecordingStarted {
+        started_at_ms: u64,
         capture_bounds: CaptureBounds,
     },
     #[serde(rename_all = "camelCase")]
@@ -186,6 +187,7 @@ pub enum Event {
     RecordingPaused {},
     #[serde(rename_all = "camelCase")]
     RecordingResumed {
+        started_at_ms: u64,
         clip_index: usize,
     },
     RecordingReconfigured {},
