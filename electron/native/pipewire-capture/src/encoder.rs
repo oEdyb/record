@@ -987,6 +987,8 @@ pub struct Muxer {
     fmt: *mut ff::AVFormatContext,
     tracks: Vec<MuxTrack>,
     header_written: bool,
+    output_path: std::path::PathBuf,
+    write_failed: bool,
 }
 
 impl Muxer {
@@ -1017,6 +1019,8 @@ impl Muxer {
                 fmt,
                 tracks: Vec::new(),
                 header_written: false,
+                output_path: path.to_path_buf(),
+                write_failed: false,
             };
 
             let opened = ff::osc_format_open_io(fmt, path_c.as_ptr());
@@ -1123,6 +1127,7 @@ impl Muxer {
             ff::av_packet_rescale_ts(packet, track.source_time_base, track.stream_time_base);
             let written = ff::av_interleaved_write_frame(self.fmt, packet);
             if written < 0 {
+                self.write_failed = true;
                 return Err(format!(
                     "av_interleaved_write_frame: {}",
                     ff::err_to_string(written)
@@ -1141,6 +1146,7 @@ impl Muxer {
             let written = ff::av_write_trailer(self.fmt);
             self.header_written = false;
             if written < 0 {
+                self.write_failed = true;
                 return Err(format!("av_write_trailer: {}", ff::err_to_string(written)));
             }
         }
@@ -1163,6 +1169,11 @@ impl Drop for Muxer {
             ff::osc_format_close_io(self.fmt);
             ff::avformat_free_context(self.fmt);
             self.fmt = ptr::null_mut();
+        }
+        if self.write_failed {
+            if let Err(error) = crate::mp4_tail::retain_complete_fragments(&self.output_path) {
+                eprintln!("could not retain complete MP4 fragments: {error}");
+            }
         }
     }
 }

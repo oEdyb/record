@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron } from "@playwright/test";
 import { launchRecordingTestApp, recordingTestTarget } from "./recording-test-app.mjs";
+import { exportPrivateTake } from "./recording-test-export.mjs";
 import { acquireRecordingTestLock } from "./recording-test-lock.mjs";
 
 function verifyClip(clip) {
@@ -47,6 +48,15 @@ function verifyClip(clip) {
 	}
 }
 
+const faultArgument = process.argv.find((arg) => arg.startsWith("--fault="));
+const fault = faultArgument?.slice(8);
+assert(
+	!fault ||
+		["hung-stop", "pause-stop", "mic-unplug", "crash", "export", "corrupt", "disk-low"].includes(
+			fault,
+		),
+	"Unknown private fault scenario",
+);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const base = path.join(process.env.HOME, ".cache/klippt-work/window-flows");
@@ -90,18 +100,51 @@ if (!process.argv.includes("--worker")) {
 								`OPENSCREEN_COMPOSITOR_VIEW_NODE=${process.env.KLIPPT_TEST_COMPOSITOR_VIEW_NODE ?? process.env.OPENSCREEN_COMPOSITOR_VIEW_NODE ?? ""}`,
 								`OPENSCREEN_LINUX_CURSOR_HELPER_EXE=${process.env.OPENSCREEN_LINUX_CURSOR_HELPER_EXE ?? path.join(root, "electron/native/pipewire-capture/build/openscreen-pipewire-helper")}`,
 							]),
+					...(fault === "disk-low"
+						? ["unshare", "--user", "--map-current-user", "--keep-caps", "--mount"]
+						: []),
 					"node",
 					fileURLToPath(import.meta.url),
 					"--worker",
+					...(faultArgument ? [faultArgument] : []),
 				],
 				{ cwd: root, stdio: ["ignore", "pipe", "inherit"] },
 			);
 
+			let workerActive = true;
 			child.stdout.on("data", (data) => {
 				process.stdout.write(data);
+				if (data.toString().includes("SAVE_PRIVATE_EXPORT")) {
+					let attempts = 0;
+					const choose = () => {
+						if (!workerActive) return;
+						const windows = JSON.parse(
+							execFileSync(
+								"agent-lab",
+								[
+									"run",
+									lab,
+									"--",
+									"python3",
+									path.join(process.env.HOME, ".local/share/agent-lab/windows.py"),
+								],
+								{ encoding: "utf8" },
+							),
+						);
+						if (!windows.some((window) => /save/i.test(window.caption))) {
+							if (++attempts < 40) setTimeout(choose, 300);
+							return;
+						}
+						execFileSync("agent-lab", ["input", lab, "chord", "29", "38"]);
+						execFileSync("agent-lab", ["input", lab, "text", path.join(run, "export.mp4")]);
+						execFileSync("agent-lab", ["input", lab, "key", "28"]);
+					};
+					setTimeout(choose, 600);
+				}
 				if (data.toString().includes("SELECT_PRIVATE_SOURCE")) {
 					let attempts = 0;
 					const choose = () => {
+						if (!workerActive) return;
 						const windows = JSON.parse(
 							execFileSync(
 								"agent-lab",
@@ -131,6 +174,7 @@ if (!process.argv.includes("--worker")) {
 						execFileSync("agent-lab", ["input", lab, "click"]);
 						execFileSync("agent-lab", ["input", lab, "text", "Private recording fixture"]);
 						setTimeout(() => {
+							if (!workerActive) return;
 							execFileSync("agent-lab", [
 								"input",
 								lab,
@@ -144,10 +188,14 @@ if (!process.argv.includes("--worker")) {
 					setTimeout(choose, 500);
 				}
 			});
-			child.on("error", reject);
-			child.on("exit", (code) =>
-				code === 0 ? resolve() : reject(new Error(`Private flow exit ${code}; artifacts ${run}`)),
-			);
+			child.on("error", (error) => {
+				workerActive = false;
+				reject(error);
+			});
+			child.on("exit", (code) => {
+				workerActive = false;
+				code === 0 ? resolve() : reject(new Error(`Private flow exit ${code}; artifacts ${run}`));
+			});
 		});
 	} finally {
 		let stopped = false;
@@ -172,7 +220,16 @@ if (!process.argv.includes("--worker")) {
 } else {
 	assert(process.env.AGENT_LAB_RUNTIME, "Only run inside a private agent-lab");
 	const run = process.env.KLIPPT_WINDOW_TEST_DIR;
-	execFileSync("pactl", [
+	if (fault === "disk-low") {
+		const recordings = path.join(run, "profile", "recordings");
+		await mkdir(recordings, { recursive: true });
+		execFileSync("python3", [
+			"-c",
+			"import ctypes,sys; lib=ctypes.CDLL(None,use_errno=True); result=lib.mount(b'tmpfs',sys.argv[1].encode(),b'tmpfs',0,b'size=2g'); assert result == 0, ctypes.get_errno()",
+			recordings,
+		]);
+	}
+	const micModule = execFileSync("pactl", [
 		"load-module",
 		"module-remap-source",
 		"master=agent_lab_audio.monitor",
@@ -197,20 +254,22 @@ w.loadURL('data:text/html,'+encodeURIComponent('<title>Private recording fixture
 	});
 	await fixture.firstWindow();
 
-	const app = await launchRecordingTestApp(
-		root,
-		[
-			"--ozone-platform=wayland",
-			"--use-fake-device-for-media-stream",
-			"--use-fake-ui-for-media-stream",
-		],
-		{
-			...process.env,
-			ELECTRON_USER_DATA_DIR: path.join(run, "profile"),
-			KLIPPT_AGENT_SOCKET: "off",
-			TMPDIR: run,
-		},
-	);
+	const launch = () =>
+		launchRecordingTestApp(
+			root,
+			[
+				"--ozone-platform=wayland",
+				"--use-fake-device-for-media-stream",
+				"--use-fake-ui-for-media-stream",
+			],
+			{
+				...process.env,
+				ELECTRON_USER_DATA_DIR: path.join(run, "profile"),
+				KLIPPT_AGENT_SOCKET: "off",
+				TMPDIR: run,
+			},
+		);
+	let app = await launch();
 	let completed = false;
 	try {
 		const page = async (type) => {
@@ -526,9 +585,34 @@ w.loadURL('data:text/html,'+encodeURIComponent('<title>Private recording fixture
 		console.log(
 			"PASS recording controls: Pause, Continue, Remove, Undo, Restart, Discard, Hide, activation, settings, preview, Studio",
 		);
+		let micUnplugged = false;
+		let diskFilled = false;
 		const started = Date.now();
-		while (Date.now() - started < 301000) {
-			await delay(10000);
+		while (Date.now() - started < (fault ? 11000 : 301000)) {
+			await delay(fault ? 1000 : 10000);
+			if (fault === "disk-low" && !diskFilled && Date.now() - started >= 2000) {
+				execFileSync(process.execPath, [
+					"-e",
+					`const fs=require('node:fs');const directory=process.argv[1];const stats=fs.statfsSync(directory);let remaining=stats.bavail*stats.bsize-200*1024*1024;const fd=fs.openSync(require('node:path').join(directory,'private-fill'),'w');const chunk=Buffer.alloc(4*1024*1024);while(remaining>0){const size=Math.min(remaining,chunk.length);fs.writeSync(fd,chunk,0,size);remaining-=size;}fs.closeSync(fd);`,
+					path.join(run, "profile", "recordings"),
+				]);
+				diskFilled = true;
+				for (let i = 0; i < 100 && (await snapshot())?.phase !== "paused"; i++) await delay(100);
+				assert.equal(
+					(await snapshot())?.phase,
+					"paused",
+					"Low-disk guard did not pause the live take",
+				);
+				console.log(
+					"PASS actual private 2 GiB disk reaches low capacity and auto-pauses with Stop available",
+				);
+				break;
+			}
+			if (fault === "mic-unplug" && Date.now() - started >= 2000 && !micUnplugged) {
+				execFileSync("pactl", ["unload-module", micModule.toString().trim()]);
+				micUnplugged = true;
+				console.log("PASS removed only the private microphone source mid-take");
+			}
 			assert.equal((await snapshot())?.phase, "recording", "Take stopped unexpectedly");
 			assert(!hud.isClosed(), "HUD closed");
 			assert(!camera.isClosed(), "Camera window closed");
@@ -537,41 +621,113 @@ w.loadURL('data:text/html,'+encodeURIComponent('<title>Private recording fixture
 			if (Math.floor((Date.now() - started) / 1000) % 60 < 10)
 				console.log("recording seconds", Math.floor((Date.now() - started) / 1000));
 		}
-		await hud.getByTestId("hud-open-studio-button").click();
-		await studio.getByRole("button", { name: "Stop recording", exact: true }).click();
-		for (let i = 0; i < 300; i++) {
-			if ((await snapshot())?.phase === "review") break;
-			await delay(200);
-		}
-		const saved = await snapshot();
-		await writeFile(path.join(run, "saved-snapshot.json"), JSON.stringify(saved, null, 2));
-		assert.equal(saved?.phase, "review");
-		assert(saved.clips.length > 0);
-		assert(
-			saved.clips.some((c) => c.durationMs >= 300000),
-			"No five-minute clip",
-		);
-		for (const clip of saved.clips) verifyClip(clip);
+		if (fault === "crash") {
+			const recordingId = (await snapshot()).recordingId;
+			process.kill(app.process().pid, "SIGKILL");
+			await delay(2000);
+			app = await launch();
+			const recoveredHud = await page("hud-overlay");
+			let session;
+			for (let i = 0; i < 200; i++) {
+				session = (
+					await recoveredHud.evaluate(() => window.electronAPI.getCurrentRecordingSession())
+				).session;
+				if (session?.createdAt === recordingId) break;
+				await delay(100);
+			}
+			assert.equal(
+				session?.createdAt,
+				recordingId,
+				"Startup did not restore the crashed private take",
+			);
+			assert(
+				session.clips.some((clip) => !clip.removed),
+				"No recoverable clip",
+			);
+			for (const clip of session.clips.filter((clip) => !clip.removed)) verifyClip(clip);
+			const editor = await page("editor");
+			await editor
+				.getByRole("button", { name: "Save video", exact: true })
+				.waitFor({ timeout: 30000 });
+			await writeFile(
+				path.join(run, "crash-recovered-session.json"),
+				JSON.stringify(session, null, 2),
+			);
+			console.log(
+				"PASS crashed private app restores journal, opens review and decodes all tracks",
+				run,
+			);
+		} else {
+			await hud.getByTestId("hud-open-studio-button").click();
+			if (fault === "hung-stop") {
+				let helper;
+				for (const pid of await readdir("/proc")) {
+					if (!/^\d+$/.test(pid)) continue;
+					try {
+						const status = await readFile(`/proc/${pid}/status`, "utf8");
+						const executable = await realpath(`/proc/${pid}/exe`);
+						if (
+							status.match(/^PPid:\s+(\d+)/m)?.[1] === String(app.process().pid) &&
+							executable.endsWith("openscreen-pipewire-helper")
+						) {
+							helper = Number(pid);
+							break;
+						}
+					} catch {
+						/* A process can exit while /proc is being read. */
+					}
+				}
+				assert(helper, "Missing owned capture helper");
+				process.kill(helper, "SIGSTOP");
+				console.log("FROZEN OWNED HELPER", helper);
+			}
+			if (fault === "pause-stop") {
+				await studio.evaluate(() => {
+					window.electronAPI.studioCommand("pause");
+					window.electronAPI.studioCommand("stop");
+				});
+			} else await studio.getByRole("button", { name: "Stop recording", exact: true }).click();
+			for (let i = 0; i < 300; i++) {
+				if ((await snapshot())?.phase === "review") break;
+				await delay(200);
+			}
+			const saved = await snapshot();
+			await writeFile(path.join(run, "saved-snapshot.json"), JSON.stringify(saved, null, 2));
+			assert.equal(saved?.phase, "review");
+			assert(saved.clips.length > 0);
+			assert(
+				saved.clips.some((c) => c.durationMs >= (fault ? 1000 : 300000)),
+				fault ? "No recovered diagnostic clip" : "No five-minute clip",
+			);
+			for (const clip of saved.clips) verifyClip(clip);
 
-		await studio.getByRole("button", { name: "Play", exact: true }).click();
-		await studio.getByRole("button", { name: "Pause", exact: true }).click();
-		const mute = studio.getByRole("button", { name: /^(Unmute|Mute)$/ });
-		const originalMute = await mute.getAttribute("aria-label");
-		await mute.press("Enter");
-		assert.notEqual(await mute.getAttribute("aria-label"), originalMute);
-		await mute.press("Enter");
-		assert.equal(await mute.getAttribute("aria-label"), originalMute);
-		await studio.getByRole("button", { name: "Seek recording +5", exact: true }).click();
-		assert(
-			Number(
-				await studio
-					.getByRole("slider", { name: "Seek recording", exact: true })
-					.getAttribute("aria-valuenow"),
-			) >= 5,
-		);
-		await studio.getByRole("button", { name: "Seek recording −5", exact: true }).click();
-		console.log("PASS saved take replay controls");
-		console.log("PASS five-minute screen/camera/microphone take opens and decodes", run);
+			await studio.getByRole("button", { name: "Play", exact: true }).click();
+			await studio.getByRole("button", { name: "Pause", exact: true }).click();
+			const mute = studio.getByRole("button", { name: /^(Unmute|Mute)$/ });
+			const originalMute = await mute.getAttribute("aria-label");
+			await mute.press("Enter");
+			assert.notEqual(await mute.getAttribute("aria-label"), originalMute);
+			await mute.press("Enter");
+			assert.equal(await mute.getAttribute("aria-label"), originalMute);
+			await studio.getByRole("button", { name: "Seek recording +5", exact: true }).click();
+			assert(
+				Number(
+					await studio
+						.getByRole("slider", { name: "Seek recording", exact: true })
+						.getAttribute("aria-valuenow"),
+				) >= 5,
+			);
+			await studio.getByRole("button", { name: "Seek recording −5", exact: true }).click();
+			console.log("PASS saved take replay controls");
+			console.log(
+				fault
+					? `PASS ${fault}: saved screen/camera/microphone take opens and decodes`
+					: "PASS five-minute screen/camera/microphone take opens and decodes",
+				run,
+			);
+			if (!fault || fault === "export" || fault === "corrupt")
+				await exportPrivateTake({ app, hud, studio, run, corrupt: fault === "corrupt" });
+		}
 		completed = true;
 	} catch (error) {
 		for (const page of app.windows()) {

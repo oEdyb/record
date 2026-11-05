@@ -143,16 +143,22 @@ describe("Linux native HUD input", () => {
 		expect(fixture.win.setIgnoreMouseEvents).toHaveBeenCalledExactlyOnceWith(false);
 	});
 
-	it("resizes for a panel and shrinks after dismissal without setting global bounds", () => {
+	it("resizes fixed bounds for a panel and shrinks after dismissal", () => {
 		const bar = { x: 24, y: 38, width: 424, height: 50 };
 		send("hud-overlay-set-direction-exclusion-rects", [
 			bar,
 			{ x: 24, y: 96, width: 652, height: 400 },
 		]);
-		expect(fixture.win.setSize).toHaveBeenLastCalledWith(700, 520);
+		expect(fixture.win.setBounds).toHaveBeenLastCalledWith(
+			{ x: 100, y: 80, width: 700, height: 520 },
+			false,
+		);
 		send("hud-overlay-set-direction-exclusion-rects", [bar]);
-		expect(fixture.win.setSize).toHaveBeenLastCalledWith(472, 112);
-		expect(fixture.win.setBounds).not.toHaveBeenCalled();
+		expect(fixture.win.setBounds).toHaveBeenLastCalledWith(
+			{ x: 100, y: 80, width: 472, height: 112 },
+			false,
+		);
+		expect(fixture.win.setPosition).not.toHaveBeenCalled();
 	});
 });
 

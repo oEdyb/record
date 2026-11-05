@@ -34,6 +34,7 @@ mod crop_wait;
 mod encoder;
 mod events;
 mod ffmpeg;
+mod mp4_tail;
 mod originals;
 mod portal;
 mod portal_grants;
