@@ -29,6 +29,7 @@ import { CursorService } from "../native-bridge/services/cursorService";
 import { ProjectService } from "../native-bridge/services/projectService";
 import { SystemService } from "../native-bridge/services/systemService";
 import { createNativeBridgeState } from "../native-bridge/store";
+import { nativeErrorMessage } from "./nativeErrorMessage";
 import type { RendererIpcMain } from "./trustedRendererIpc";
 
 export interface NativeBridgeContext {
@@ -763,7 +764,7 @@ export function registerNativeBridgeHandlers(
 				return createErrorResponse(
 					requestId,
 					"EXPORT_FAILED",
-					redactPaths(error.message),
+					redactPaths(nativeErrorMessage(error.message)),
 					error.retryable,
 					{ exportPhase: error.phase, exportCode: error.code },
 				);
@@ -771,7 +772,11 @@ export function registerNativeBridgeHandlers(
 			return createErrorResponse(
 				requestId,
 				"INTERNAL_ERROR",
-				redactPaths(error instanceof Error ? error.message : "Unknown native bridge error."),
+				redactPaths(
+					nativeErrorMessage(
+						error instanceof Error ? error.message : "Unknown native bridge error.",
+					),
+				),
 			);
 		}
 	});
