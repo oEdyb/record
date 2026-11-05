@@ -14,7 +14,7 @@ export function recordingTestTarget(root, env = process.env) {
 		: { executablePath: path.join(root, "node_modules/electron/dist/electron"), args: [root] };
 }
 
-async function kwinWindow(title, action, pid, directory) {
+async function kwinWindow(title, action, pid, directory, attempt = 0) {
 	assert(process.env.AGENT_LAB_RUNTIME, "Compositor operations require a private desktop");
 	const tag = `klippt-test-${randomUUID()}`;
 	const source = path.join(directory, `${tag}.js`);
@@ -29,7 +29,14 @@ async function kwinWindow(title, action, pid, directory) {
 		execFileSync("qdbus6", ["org.kde.KWin", ...args], { encoding: "utf8" }).trim();
 	const id = dbus(["/Scripting", "loadScript", source, tag]);
 	try {
-		dbus([`/Scripting/Script${id}`, "org.kde.kwin.Script.run"]);
+		try {
+			dbus([`/Scripting/Script${id}`, "org.kde.kwin.Script.run"]);
+		} catch (error) {
+			if (attempt >= 4 || !String(error.stdout ?? error.message).includes("UnknownObject"))
+				throw error;
+			await delay(100);
+			return await kwinWindow(title, action, pid, directory, attempt + 1);
+		}
 		for (let i = 0; i < 40; i++) {
 			const log = execFileSync(
 				"journalctl",
@@ -68,10 +75,20 @@ export async function launchRecordingTestApp(root, args, env) {
 	const target = recordingTestTarget(root, env);
 	if (!env.KLIPPT_TEST_EXECUTABLE) {
 		const app = await _electron.launch({ ...target, args: [...target.args, ...args], env });
+		const log = createWriteStream(path.join(env.KLIPPT_WINDOW_TEST_DIR, "main-process.log"), {
+			flags: "a",
+		});
+		app.process().stdout?.pipe(log, { end: false });
+		app.process().stderr?.pipe(log, { end: false });
+		app.process().once("exit", () => log.end());
 		app.nativeWindow = (title, action) =>
 			app.evaluate(
 				({ BrowserWindow }, { title, action }) => {
-					const w = BrowserWindow.getAllWindows().find((w) => w.getTitle() === title);
+					const kind = title === "Klippt Camera" ? "camera-preview" : "hud-overlay";
+					const w = BrowserWindow.getAllWindows().find((w) =>
+						w.webContents.getURL().includes(`windowType=${kind}`),
+					);
+					if (!w) throw new Error(`Missing recording window ${kind}`);
 					return w[action]();
 				},
 				{ title, action },
