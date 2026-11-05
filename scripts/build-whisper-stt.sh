@@ -296,8 +296,9 @@ libparakeet*.so|libparakeet*.so.*|\
       echo "       which is silent until a user tries to transcribe." >&2
       exit 1
     fi
-    # Already ours: ldd resolved it through $ORIGIN on a re-run of this script.
-    if [[ "$(cd "$(dirname "${gomp}")" && pwd)" != "$(cd "${OUT_DIR}" && pwd)" ]]; then
+    # ldd can resolve $ORIGIN through a physical path while OUT_DIR is a
+    # symlink. Compare file identity, not the spelling of their directories.
+    if [[ ! "${gomp}" -ef "${OUT_DIR}/libgomp.so.1" ]]; then
       cp -v "${gomp}" "${OUT_DIR}/libgomp.so.1"
     fi
   fi
