@@ -18,6 +18,7 @@ App and windows (any window; never moves your mouse or types on your keyboard):
   windows                            Open windows: index, kind, title, focus
   studio                             Open the Studio, as the pill's Studio button does
   studio-state                       Studio phase, setup, clips and what is allowed now
+  studio-record-trace                Bounded local Record delivery and startup trace
   studio-do COMMAND                  Press a Studio button: record, pause, resume, stop,
                                      remove-last, undo-remove, toggle-mic, toggle-camera,
                                      toggle-system-audio, record-more, finish, pill,
@@ -66,6 +67,7 @@ const ALIASES = {
 	seek: ([sec]) => ["seek", { sec: Number(sec) }],
 	studio: () => ["studio.open", {}],
 	"studio-state": () => ["studio.state", {}],
+	"studio-record-trace": () => ["studio.record-trace", {}],
 	"studio-do": ([command]) => ["studio.command", { command: parse(command) }],
 	controls: () => ["ui.controls", {}],
 	click: ([label]) => ["ui.click", { label }],

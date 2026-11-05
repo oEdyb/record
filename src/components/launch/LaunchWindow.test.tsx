@@ -844,6 +844,32 @@ describe("LaunchWindow record button", () => {
 		delete (window.electronAPI as Partial<Window["electronAPI"]>).traceRecordRequest;
 	});
 
+	it("keeps one ready listener across renders while reading the latest busy state", async () => {
+		stubElectronAPI(vi.fn(async () => displayOneSource));
+		const ready = vi.fn();
+		window.electronAPI.setStudioRecordReady = ready;
+		let record: (token?: number) => void = () => undefined;
+		const subscribe = vi.fn((callback: (token?: number) => void) => {
+			record = callback;
+			return () => undefined;
+		});
+		window.electronAPI.onHudStartRecording = subscribe;
+		const view = renderLaunchWindow();
+		await waitFor(() => expect(ready).toHaveBeenCalledWith(true));
+		recorderState.value.saving = true;
+		view.rerender(
+			<TooltipProvider>
+				<LaunchWindow />
+			</TooltipProvider>,
+		);
+		expect(subscribe).toHaveBeenCalledOnce();
+		expect(ready).toHaveBeenCalledOnce();
+		act(() => record());
+		expect(recorderState.value.startRecordingFromRequest).not.toHaveBeenCalled();
+		delete (window.electronAPI as Partial<Window["electronAPI"]>).setStudioRecordReady;
+		delete (window.electronAPI as Partial<Window["electronAPI"]>).onHudStartRecording;
+	});
+
 	it("does not advertise a Record listener until the saved source is loaded", async () => {
 		let resolveSource: (source: ProcessedDesktopSource) => void = () => undefined;
 		const pending = new Promise<ProcessedDesktopSource>((resolve) => {

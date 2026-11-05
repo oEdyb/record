@@ -20,6 +20,10 @@ export class RecordRequest {
 
 	constructor(private readonly deps: RecordRequestDeps) {}
 
+	isPending(): boolean {
+		return this.pending !== null;
+	}
+
 	start(): Promise<StudioRecordResult> {
 		if (this.pending || this.deps.take()?.running)
 			return Promise.resolve({

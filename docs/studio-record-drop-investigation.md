@@ -266,3 +266,24 @@ oversized-file warning. Mac/Linux writer replies still require the matching
 main-process take ID. Native Windows uses its successful native start response;
 browser fallback uses its first nonempty encoded data event from the pending
 owner. Neither relies on the Mac-only take service for confirmation.
+
+The second independent review accepted the earlier corrections and found one
+remaining browser-fallback token leak: recorder error/stop before its first data
+could leave a renderer token active after main timed out. The follow-up reports
+`writer-failed` on either event before data and removes the old data listener.
+Mounted hook tests cover both events on both fallback platforms, acceptance of a
+later token, and rejection of late old chunks. Finish is also locked while a
+start is pending, readiness IPC remains stable across rerenders, and the CLI now
+has a `studio-record-trace` convenience alias (generic RPC worked already).
+The narrow reload timing gap can still produce a truthful 30-second unconfirmed
+result; it cannot produce a false recording success. No automatic retry occurs.
+
+Primary browser contract checked: [W3C MediaStream Recording error handling](https://www.w3.org/TR/mediastream-recording/#error-handling).
+
+Installation ownership was resolved from the original Studio thread's activity:
+its November 4 installation command and later tool output identify installed app
+PID 82850; this is the same process started November 4 at 01:11:27 and still
+running now. It was launched by that earlier agent, not a new user launch.
+Fresh state inspection is idle, recording ID null and zero clips; Mac input has
+been idle over 40 minutes. That agent-launched idle copy may be closed for the
+already-authorized installation without stopping a user-started process.

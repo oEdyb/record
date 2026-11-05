@@ -234,9 +234,13 @@ describe("useScreenRecorder start timing", () => {
 	});
 
 	it.each([
-		"win32",
-		"darwin",
-	])("confirms %s browser fallback only after a nonempty encoded chunk", async (platform) => {
+		["win32", "data"],
+		["darwin", "data"],
+		["win32", "error"],
+		["darwin", "error"],
+		["win32", "stop"],
+		["darwin", "stop"],
+	])("completes a %s browser request from %s without retaining a stale token", async (platform, outcome) => {
 		stubElectronAPI({
 			getPlatform: vi.fn(() => platform),
 			isNativeWindowsCaptureAvailable: vi.fn(async () => ({
@@ -295,6 +299,18 @@ describe("useScreenRecorder start timing", () => {
 		expect(
 			api.traceRecordRequest.mock.calls.some(([event]) => event.stage === "browser-writer-started"),
 		).toBe(false);
+		if (outcome !== "data") {
+			recorder.state = "inactive";
+			act(() => recorder.dispatchEvent(new Event(outcome)));
+			expect(api.traceRecordRequest).toHaveBeenCalledWith({
+				token: 9002,
+				stage: "writer-failed",
+				flags: {},
+			});
+			expect(receiveRecordRequest(9004)).toBe(true);
+			traceRecordRequest("cleanup", { captureStarted: false });
+			return;
+		}
 		act(() =>
 			recorder.dispatchEvent(
 				Object.assign(new Event("dataavailable"), { data: new Blob(["encoded video"]) }),

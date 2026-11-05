@@ -219,6 +219,9 @@ describe("StudioController", () => {
 		});
 		const result = controller.requestRecord();
 		expect(controller.snapshot().phase).toBe("review");
+		expect(controller.snapshot().pill.transportBusy).toBe(true);
+		controller.command("finish");
+		expect(openReview).not.toHaveBeenCalled();
 		const token = sendToPill.mock.calls[0][1];
 		controller.recordProgress(pill.window.webContents, token, "writer-failed", {});
 		expect((await result).success).toBe(false);

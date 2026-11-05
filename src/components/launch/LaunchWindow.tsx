@@ -1332,33 +1332,28 @@ export function LaunchWindow() {
 		recording,
 	]);
 
+	const recordRequestHandler = useRef<(token?: number) => void>(() => undefined);
+	recordRequestHandler.current = (token) => {
+		if (!receiveRecordRequest(token)) return;
+		traceRecordRequest("receipt", { recording, starting, saving, hasSelectedSource });
+		if (recording || starting || saving) {
+			traceRecordRequest("renderer-guard", { recording, starting, saving });
+			return;
+		}
+		handleRecordButtonClick(undefined, true);
+	};
 	useEffect(() => {
 		if (!sourceReady || !portalReady || !preferencesReady) return;
-		const unsubscribe = window.electronAPI?.onHudStartRecording?.((token) => {
-			if (!receiveRecordRequest(token)) return;
-			traceRecordRequest("receipt", { recording, starting, saving, hasSelectedSource });
-			if (recording || starting || saving) {
-				traceRecordRequest("renderer-guard", { recording, starting, saving });
-				return;
-			}
-			handleRecordButtonClick(undefined, true);
-		});
+		const unsubscribe = window.electronAPI?.onHudStartRecording?.((token) =>
+			recordRequestHandler.current(token),
+		);
 		if (!unsubscribe) return;
 		window.electronAPI?.setStudioRecordReady?.(true);
 		return () => {
 			window.electronAPI?.setStudioRecordReady?.(false);
 			unsubscribe();
 		};
-	}, [
-		handleRecordButtonClick,
-		hasSelectedSource,
-		portalReady,
-		preferencesReady,
-		recording,
-		saving,
-		sourceReady,
-		starting,
-	]);
+	}, [portalReady, preferencesReady, sourceReady]);
 
 	// The Studio's Remove button: the same predicate as the pill's own.
 	useEffect(() => {

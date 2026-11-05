@@ -1997,12 +1997,22 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				`${RECORDING_FILE_PREFIX}${activeRecordingId}${VIDEO_FILE_EXTENSION}`,
 			);
 			const browserRecorder = screenRecorder.current.recorder;
+			let browserWriterSettled = false;
 			const confirmBrowserWriter = (event: BlobEvent) => {
-				if (!event.data || event.data.size === 0) return;
+				if (browserWriterSettled || !event.data || event.data.size === 0) return;
+				browserWriterSettled = true;
 				browserRecorder.removeEventListener("dataavailable", confirmBrowserWriter);
 				traceRecordRequest("browser-writer-started", { recordingId: activeRecordingId });
 			};
+			const failBeforeFirstChunk = () => {
+				if (browserWriterSettled) return;
+				browserWriterSettled = true;
+				browserRecorder.removeEventListener("dataavailable", confirmBrowserWriter);
+				traceRecordRequest("writer-failed");
+			};
 			browserRecorder.addEventListener("dataavailable", confirmBrowserWriter);
+			browserRecorder.addEventListener("error", failBeforeFirstChunk, { once: true });
+			browserRecorder.addEventListener("stop", failBeforeFirstChunk, { once: true });
 			screenRecorder.current.recorder.addEventListener(
 				"error",
 				() => {

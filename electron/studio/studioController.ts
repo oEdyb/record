@@ -113,11 +113,13 @@ export class StudioController {
 	}
 
 	async requestRecord() {
-		const result = await this.recordRequest.start();
+		const pending = this.recordRequest.start();
+		this.publish();
+		const result = await pending;
 		if (result.success) {
 			this.review = null;
-			this.publish();
 		}
+		this.publish();
 		return result;
 	}
 	isRecordingOwner(sender: object) {
@@ -158,7 +160,9 @@ export class StudioController {
 			shown: this.visible(),
 			transcript: this.deps.transcript(),
 			setup: this.deps.setup(),
-			pill: this.pill,
+			pill: this.recordRequest.isPending()
+				? { ...this.pill, controlsLocked: true, transportBusy: true }
+				: this.pill,
 		};
 	}
 
@@ -365,7 +369,7 @@ export class StudioController {
 	}
 
 	private finish() {
-		if (!this.reviewing()) return;
+		if (!this.reviewing() || this.recordRequest.isPending()) return;
 		// Opening the review while the pill still attaches camera clips would cut that save short.
 		if (this.pill.saving) {
 			this.finishWhenSaved = true;
