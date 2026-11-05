@@ -141,7 +141,10 @@ describe("AtomicExportPublisher", () => {
 		expect(await readFile(finalPath, "utf8")).toBe("old export");
 	});
 
-	it("keeps recovery state when partial-file cleanup fails", async () => {
+	it.each([
+		"EBUSY",
+		"EACCES",
+	])("keeps recovery state when partial-file cleanup fails: %s", async (code) => {
 		const finalPath = path.join(directory, "video.mp4");
 		await writeFile(finalPath, "old export");
 		const exportPublisher = new AtomicExportPublisher({
@@ -149,7 +152,7 @@ describe("AtomicExportPublisher", () => {
 			safetyBytes: 0n,
 			getAvailableBytes: async () => 1024n ** 4n,
 			removeStagingFile: async () => {
-				throw Object.assign(new Error("file busy"), { code: "EBUSY" });
+				throw Object.assign(new Error("file busy"), { code });
 			},
 		});
 
@@ -163,7 +166,17 @@ describe("AtomicExportPublisher", () => {
 				},
 				verify: async () => undefined,
 			}),
-		).rejects.toMatchObject({ phase: "cleanup", code: "CLEANUP_FAILED", retryable: true });
+		).rejects.toMatchObject({
+			phase: "cleanup",
+			code: "CLEANUP_FAILED",
+			retryable: true,
+			...(code === "EACCES"
+				? {
+						message:
+							"Export was not saved. Klippt cannot remove its partial file; restore write access to the destination folder.",
+					}
+				: {}),
+		});
 
 		expect(await readFile(finalPath, "utf8")).toBe("old export");
 		expect(
@@ -208,6 +221,78 @@ describe("AtomicExportPublisher", () => {
 			message: "Not enough free space to finish this export safely.",
 		});
 	});
+
+	it.each([
+		"interleaved_write_frame a échoué (ret=-28)",
+		"write_trailer a échoué (ret=-122)",
+		"avio_open a échoué (ret=-69)",
+	])("explains native filesystem capacity failure: %s", async (message) => {
+		await expect(
+			publisher().publish({
+				finalPath: path.join(directory, "native-full.mp4"),
+				expectedBytes: 1,
+				render: async () => {
+					throw new Error(message);
+				},
+				verify: async () => undefined,
+			}),
+		).rejects.toMatchObject({
+			code: "INSUFFICIENT_SPACE",
+			message: "Not enough free space to finish this export safely.",
+		});
+	});
+	it.each([
+		"avio_open a échoué (ret=-30)",
+		"avio_open: -30 (Read-only file system)",
+	])("explains native read-only output: %s", async (message) => {
+		await expect(
+			publisher().publish({
+				finalPath: path.join(directory, "native-readonly.mp4"),
+				expectedBytes: 1,
+				render: async () => {
+					throw new Error(message);
+				},
+				verify: async () => undefined,
+			}),
+		).rejects.toMatchObject({
+			message: "This destination is read-only. Choose a writable folder.",
+		});
+	});
+
+	it.each([
+		"avio_open a échoué (ret=-13)",
+		"avio_open: -13 (Permission denied)",
+	])("explains native output permissions: %s", async (message) => {
+		await expect(
+			publisher().publish({
+				finalPath: path.join(directory, "native-denied.mp4"),
+				expectedBytes: 1,
+				render: async () => {
+					throw new Error(message);
+				},
+				verify: async () => undefined,
+			}),
+		).rejects.toMatchObject({
+			message:
+				"Permission denied for an export file. Check the source files and choose a writable destination.",
+		});
+	});
+
+	it("does not mistake a decoder/device error for exhausted disk space", async () => {
+		await expect(
+			publisher().publish({
+				finalPath: path.join(directory, "device.mp4"),
+				expectedBytes: 1,
+				render: async () => {
+					throw new Error("decoder device open a échoué (ret=-28)");
+				},
+				verify: async () => undefined,
+			}),
+		).rejects.toMatchObject({
+			code: "RENDER_FAILED",
+			message: "decoder device open a échoué (ret=-28)",
+		});
+	});
 	it("explains a read-only destination instead of exposing EROFS", async () => {
 		await expect(
 			publisher().publish({
@@ -225,6 +310,30 @@ describe("AtomicExportPublisher", () => {
 		});
 	});
 
+	it("explains destination permissions changing before publication", async () => {
+		const denied = Object.assign(new Error("EACCES: permission denied, rename staging.mp4"), {
+			code: "EACCES",
+		});
+		const instance = new AtomicExportPublisher({
+			journalPath,
+			safetyBytes: 0n,
+			getAvailableBytes: async () => 1024n ** 4n,
+			renameFile: async () => {
+				throw denied;
+			},
+		});
+		await expect(
+			instance.publish({
+				finalPath: path.join(directory, "denied.mp4"),
+				expectedBytes: 1,
+				render: async (p) => writeFile(p, "media"),
+				verify: async () => undefined,
+			}),
+		).rejects.toMatchObject({
+			message:
+				"Permission denied for an export file. Check the source files and choose a writable destination.",
+		});
+	});
 	it("does not start rendering when already cancelled", async () => {
 		const controller = new AbortController();
 		controller.abort();

@@ -260,9 +260,19 @@ function wrapPhaseError(
 	if (error instanceof ExportTransactionError) return error;
 	const cause = asError(error);
 	const filesystemCode = (error as NodeJS.ErrnoException | undefined)?.code;
+	// FFmpeg's native compositor reports errno as a numeric return value. Only
+	// file I/O contexts qualify: the same number from a device/decoder is not disk capacity.
+	const nativeIoCode = Number(
+		/\b(?:av_)?(?:interleaved_write_frame|write_trailer|avio_open|avio_close)\b[^\n]*?(?:\bret=|:\s*)(-\d+)\b/.exec(
+			cause.message,
+		)?.[1],
+	);
 	if (
 		filesystemCode === "ENOSPC" ||
 		filesystemCode === "EDQUOT" ||
+		nativeIoCode === -28 ||
+		nativeIoCode === -122 ||
+		nativeIoCode === -69 ||
 		/(?:^|[:(])\s*(?:No space left on device|Disk quota exceeded)(?:[).\s]|$)/i.test(cause.message)
 	) {
 		return new ExportTransactionError(
@@ -273,9 +283,28 @@ function wrapPhaseError(
 			cause,
 		);
 	}
-	if (filesystemCode === "EROFS") {
+	if (
+		filesystemCode === "EROFS" ||
+		nativeIoCode === -30 ||
+		/(?:^|[:(])\s*Read-only file system(?:[).\s]|$)/i.test(cause.message)
+	) {
 		return new ExportTransactionError(
 			"This destination is read-only. Choose a writable folder.",
+			phase,
+			code,
+			false,
+			cause,
+		);
+	}
+
+	if (
+		filesystemCode === "EACCES" ||
+		filesystemCode === "EPERM" ||
+		nativeIoCode === -13 ||
+		nativeIoCode === -1
+	) {
+		return new ExportTransactionError(
+			"Permission denied for an export file. Check the source files and choose a writable destination.",
 			phase,
 			code,
 			false,
@@ -479,8 +508,12 @@ export class AtomicExportPublisher {
 					await fs.rm(stagingPath, { force: true });
 				}
 			} catch (cleanupError) {
+				const code = (cleanupError as NodeJS.ErrnoException | undefined)?.code;
+				const blocked = code === "EACCES" || code === "EPERM" || code === "EROFS";
 				throw new ExportTransactionError(
-					"Export failed and its partial file could not be removed safely.",
+					blocked
+						? "Export was not saved. Klippt cannot remove its partial file; restore write access to the destination folder."
+						: "Export failed and its partial file could not be removed safely.",
 					"cleanup",
 					"CLEANUP_FAILED",
 					true,

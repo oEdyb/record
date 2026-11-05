@@ -61,6 +61,8 @@ assert(
 			"corrupt",
 			"disk-low",
 			"cancel",
+			"export-full",
+			"export-readonly",
 		].includes(fault),
 	"Unknown private fault scenario",
 );
@@ -107,7 +109,7 @@ if (!process.argv.includes("--worker")) {
 								`OPENSCREEN_COMPOSITOR_VIEW_NODE=${process.env.KLIPPT_TEST_COMPOSITOR_VIEW_NODE ?? process.env.OPENSCREEN_COMPOSITOR_VIEW_NODE ?? ""}`,
 								`OPENSCREEN_LINUX_CURSOR_HELPER_EXE=${process.env.OPENSCREEN_LINUX_CURSOR_HELPER_EXE ?? path.join(root, "electron/native/pipewire-capture/build/openscreen-pipewire-helper")}`,
 							]),
-					...(fault === "disk-low"
+					...(fault === "disk-low" || fault === "export-full"
 						? ["unshare", "--user", "--map-current-user", "--keep-caps", "--mount"]
 						: []),
 					"node",
@@ -143,7 +145,15 @@ if (!process.argv.includes("--worker")) {
 							return;
 						}
 						execFileSync("agent-lab", ["input", lab, "chord", "29", "38"]);
-						execFileSync("agent-lab", ["input", lab, "text", path.join(run, "export.mp4")]);
+						execFileSync("agent-lab", [
+							"input",
+							lab,
+							"text",
+							path.join(
+								run,
+								fault?.startsWith("export-") ? "export-disk/export.mp4" : "export.mp4",
+							),
+						]);
 						execFileSync("agent-lab", ["input", lab, "key", "28"]);
 					};
 					setTimeout(choose, 600);
@@ -235,6 +245,16 @@ if (!process.argv.includes("--worker")) {
 			"import ctypes,sys; lib=ctypes.CDLL(None,use_errno=True); result=lib.mount(b'tmpfs',sys.argv[1].encode(),b'tmpfs',0,b'size=2g'); assert result == 0, ctypes.get_errno()",
 			recordings,
 		]);
+	}
+	if (fault === "export-full" || fault === "export-readonly") {
+		const directory = path.join(run, "export-disk");
+		await mkdir(directory, { recursive: true });
+		if (fault === "export-full")
+			execFileSync("python3", [
+				"-c",
+				"import ctypes,sys; lib=ctypes.CDLL(None,use_errno=True); result=lib.mount(b'tmpfs',sys.argv[1].encode(),b'tmpfs',0,b'size=512m'); assert result==0,ctypes.get_errno()",
+				directory,
+			]);
 	}
 	const micModule = execFileSync("pactl", [
 		"load-module",
@@ -753,15 +773,26 @@ w.loadURL('data:text/html,'+encodeURIComponent('<title>Private recording fixture
 					: "PASS five-minute screen/camera/microphone take opens and decodes",
 				run,
 			);
-			if (!fault || fault === "export" || fault === "corrupt" || fault === "cancel")
-				await exportPrivateTake({
-					app,
-					hud,
-					studio,
-					run,
-					corrupt: fault === "corrupt",
-					cancel: fault === "cancel",
-				});
+			if (
+				!fault ||
+				fault === "export" ||
+				fault === "corrupt" ||
+				fault === "cancel" ||
+				fault === "export-full" ||
+				fault === "export-readonly"
+			)
+				app =
+					(await exportPrivateTake({
+						app,
+						hud,
+						studio,
+						run,
+						corrupt: fault === "corrupt",
+						cancel: fault === "cancel",
+						destinationFault:
+							fault === "export-full" ? "full" : fault === "export-readonly" ? "readonly" : null,
+						relaunch: launch,
+					})) ?? app;
 		}
 		completed = true;
 	} catch (error) {
