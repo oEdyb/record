@@ -3,7 +3,14 @@ import { execFileSync } from "node:child_process";
 import { copyFile, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-export async function exportPrivateTake({ app, hud, studio, run, corrupt = false }) {
+export async function exportPrivateTake({
+	app,
+	hud,
+	studio,
+	run,
+	corrupt = false,
+	cancel = false,
+}) {
 	const { session: original } = await hud.evaluate(() =>
 		window.electronAPI.getCurrentRecordingSession(),
 	);
@@ -95,6 +102,39 @@ export async function exportPrivateTake({ app, hud, studio, run, corrupt = false
 		.getByRole("dialog")
 		.getByRole("button", { name: /Save video|Export|Save…/ })
 		.click();
+	if (cancel) {
+		const progressAtCancel = await editor.waitForFunction(
+			() => {
+				const bar = Array.from(document.querySelectorAll('[role="progressbar"]')).find(
+					(bar) =>
+						Number(bar.getAttribute("aria-valuenow")) > 0 &&
+						Number(bar.getAttribute("aria-valuenow")) < 100,
+				);
+				const button = Array.from(document.querySelectorAll("button")).find(
+					(button) => button.textContent.trim() === "Stop saving",
+				);
+				if (!bar || !button) return false;
+				const progress = Number(bar.getAttribute("aria-valuenow"));
+				button.click();
+				return progress;
+			},
+			null,
+			{ timeout: 30000 },
+		);
+		await writeFile(
+			path.join(run, "cancel-progress.json"),
+			JSON.stringify({ percent: await progressAtCancel.jsonValue() }),
+		);
+		await editor
+			.getByRole("button", { name: "Stop saving", exact: true })
+			.waitFor({ state: "hidden", timeout: 30000 });
+		assert(
+			!(await readdir(run)).some((name) => /^export\.mp4/.test(name)),
+			"Cancelled export was published",
+		);
+		console.log("PASS native Studio export cancelled after frame progress, no output published");
+		return;
+	}
 	if (corrupt) {
 		await editor
 			.getByText(/damaged or incomplete frames/i)

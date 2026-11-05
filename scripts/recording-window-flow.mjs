@@ -52,9 +52,16 @@ const faultArgument = process.argv.find((arg) => arg.startsWith("--fault="));
 const fault = faultArgument?.slice(8);
 assert(
 	!fault ||
-		["hung-stop", "pause-stop", "mic-unplug", "crash", "export", "corrupt", "disk-low"].includes(
-			fault,
-		),
+		[
+			"hung-stop",
+			"pause-stop",
+			"mic-unplug",
+			"crash",
+			"export",
+			"corrupt",
+			"disk-low",
+			"cancel",
+		].includes(fault),
 	"Unknown private fault scenario",
 );
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -746,8 +753,15 @@ w.loadURL('data:text/html,'+encodeURIComponent('<title>Private recording fixture
 					: "PASS five-minute screen/camera/microphone take opens and decodes",
 				run,
 			);
-			if (!fault || fault === "export" || fault === "corrupt")
-				await exportPrivateTake({ app, hud, studio, run, corrupt: fault === "corrupt" });
+			if (!fault || fault === "export" || fault === "corrupt" || fault === "cancel")
+				await exportPrivateTake({
+					app,
+					hud,
+					studio,
+					run,
+					corrupt: fault === "corrupt",
+					cancel: fault === "cancel",
+				});
 		}
 		completed = true;
 	} catch (error) {
