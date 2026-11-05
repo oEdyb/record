@@ -101,3 +101,7 @@ export type PillSetupCommand = Exclude<
 	StudioCommand,
 	"record" | "pause" | "resume" | "stop" | "remove-last" | "pill" | "record-more" | "finish"
 >;
+
+export type StudioRecordResult =
+	| { success: true; recordingId: number }
+	| { success: false; error: string };

@@ -1,4 +1,5 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { InspectorSwitch } from "@/components/ui/inspector";
 import { useScopedT } from "@/contexts/I18nContext";
 import { applyTheme } from "@/hooks/useTheme";
@@ -83,13 +84,36 @@ export function StudioWindow() {
 		const timer = setTimeout(() => setPending(false), COMMAND_TIMEOUT_MS);
 		return () => clearTimeout(timer);
 	}, [pending]);
+	useEffect(
+		() =>
+			window.electronAPI.onStudioRecordResult?.((result) => {
+				if (!result.success) {
+					setPending(false);
+					setResumeAsked(false);
+					toast.error(result.error);
+				}
+			}),
+		[],
+	);
 	const send = useCallback((command: StudioCommand) => {
 		if (command !== "pill" && command !== "open-notes") setPending(true);
 		if (command === "resume" || command === "record") {
 			setResumeAsked(true);
 			setSeekRequest(null);
 		}
-		window.electronAPI.studioCommand(command);
+		void Promise.resolve(window.electronAPI.studioCommand(command))
+			.then((result) => {
+				if (result && !result.success) {
+					setPending(false);
+					setResumeAsked(false);
+					toast.error(result.error);
+				}
+			})
+			.catch(() => {
+				setPending(false);
+				setResumeAsked(false);
+				toast.error("Recording controls did not respond. Reopen Klippt and try again.");
+			});
 	}, []);
 	const seek = (takeSec: number, play = false) =>
 		setSeekRequest({

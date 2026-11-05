@@ -31,6 +31,7 @@ vi.mock("sonner", () => ({
 
 import { toast } from "sonner";
 import type { NativeRecordingAppStopRequest } from "@/lib/nativeMacRecording";
+import { receiveRecordRequest, traceRecordRequest } from "@/lib/recording/recordRequestTrace";
 import type { RecordingSession, RecordingSessionClip } from "@/lib/recordingSession";
 import { useScreenRecorder } from "./useScreenRecorder";
 
@@ -42,6 +43,20 @@ let api: Record<string, ReturnType<typeof vi.fn>>;
 let originalMediaDevices: PropertyDescriptor | undefined;
 
 class FakeMediaRecorder {
+	private events = new EventTarget();
+	addEventListener(
+		type: string,
+		listener: EventListenerOrEventListenerObject,
+		options?: AddEventListenerOptions | boolean,
+	) {
+		this.events.addEventListener(type, listener, options);
+	}
+	removeEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+		this.events.removeEventListener(type, listener);
+	}
+	dispatchEvent(event: Event) {
+		return this.events.dispatchEvent(event);
+	}
 	static instances: FakeMediaRecorder[] = [];
 	static isTypeSupported = () => true;
 	state: RecordingState = "inactive";
@@ -104,6 +119,7 @@ function fakeWebcamStream(format: {
 function stubElectronAPI(overrides: Record<string, unknown> = {}) {
 	api = {
 		getRecordingPrefs: vi.fn(async () => null),
+		traceRecordRequest: vi.fn(),
 		getPlatform: vi.fn(() => "win32"),
 		getSelectedSource: vi.fn(async () => SOURCE),
 		isNativeWindowsCaptureAvailable: vi.fn(async () => ({ success: true, available: true })),
@@ -156,6 +172,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+	traceRecordRequest("cleanup", { captureStarted: false });
 	if (originalMediaDevices) {
 		Object.defineProperty(navigator, "mediaDevices", originalMediaDevices);
 	} else {
@@ -167,6 +184,145 @@ afterEach(() => {
 });
 
 describe("useScreenRecorder start timing", () => {
+	it("confirms a tagged Windows request only after the native start response", async () => {
+		let finish: (result: { success: true; recordingId: number }) => void = () => undefined;
+		api.startNativeWindowsRecording.mockReturnValue(
+			new Promise((resolve) => {
+				finish = resolve;
+			}),
+		);
+		const view = renderHook(() => useScreenRecorder());
+		receiveRecordRequest(9001);
+		act(() => view.result.current.startRecordingFromRequest());
+		await settle();
+		expect(
+			api.traceRecordRequest.mock.calls.some(([event]) => event.stage === "windows-writer-started"),
+		).toBe(false);
+		await act(async () => finish({ success: true, recordingId: 7 }));
+		await settle(20);
+		expect(api.traceRecordRequest).toHaveBeenCalledWith({
+			token: 9001,
+			stage: "windows-writer-started",
+			flags: { recordingId: 7 },
+		});
+		expect(
+			api.traceRecordRequest.mock.calls.some(
+				([event]) => event.stage === "cleanup" && event.flags.captureStarted === false,
+			),
+		).toBe(false);
+	});
+
+	it("a start-only request cannot cancel a pending native start", async () => {
+		let finish: (result: { success: true; recordingId: number }) => void = () => undefined;
+		api.startNativeWindowsRecording.mockReturnValue(
+			new Promise((resolve) => {
+				finish = resolve;
+			}),
+		);
+		const view = renderHook(() => useScreenRecorder());
+		act(() => view.result.current.startRecordingFromRequest());
+		await settle();
+		act(() => view.result.current.startRecordingFromRequest());
+		await settle();
+		expect(view.result.current.starting).toBe(true);
+		expect(api.hideCountdownOverlay).not.toHaveBeenCalled();
+		expect(api.stopNativeWindowsRecording).not.toHaveBeenCalled();
+		await act(async () => finish({ success: true, recordingId: 7 }));
+		await settle(20);
+		expect(view.result.current.recording).toBe(true);
+		expect(api.startNativeWindowsRecording).toHaveBeenCalledOnce();
+	});
+
+	it.each([
+		["win32", "data"],
+		["darwin", "data"],
+		["win32", "error"],
+		["darwin", "error"],
+		["win32", "stop"],
+		["darwin", "stop"],
+	])("completes a %s browser request from %s without retaining a stale token", async (platform, outcome) => {
+		stubElectronAPI({
+			getPlatform: vi.fn(() => platform),
+			isNativeWindowsCaptureAvailable: vi.fn(async () => ({
+				success: true,
+				available: false,
+				reason: "unsupported-os",
+			})),
+			isNativeMacCaptureAvailable: vi.fn(async () => ({
+				success: true,
+				available: false,
+				reason: "unsupported-platform",
+			})),
+			requestNativeMacCursorAccess: vi.fn(async () => ({ granted: true })),
+			setRecordingState: vi.fn(async () => undefined),
+		});
+		const videoTrack = {
+			stop: vi.fn(),
+			applyConstraints: vi.fn(async () => undefined),
+			getSettings: () => ({ width: 1920, height: 1080, frameRate: 30 }),
+		};
+		class TestStream {
+			getTracks() {
+				return [videoTrack];
+			}
+			getVideoTracks() {
+				return [videoTrack];
+			}
+			getAudioTracks() {
+				return [];
+			}
+			addTrack() {
+				return undefined;
+			}
+		}
+		vi.stubGlobal("MediaStream", TestStream);
+		vi.stubGlobal("MediaRecorder", FakeMediaRecorder);
+		Object.defineProperty(navigator, "mediaDevices", {
+			configurable: true,
+			value: {
+				getUserMedia: vi.fn(async () => new TestStream()),
+				getDisplayMedia: vi.fn(async () => new TestStream()),
+			},
+		});
+		const view = renderHook(() => useScreenRecorder());
+		receiveRecordRequest(9002);
+		act(() => view.result.current.startRecordingFromRequest());
+		await settle(20);
+		expect(view.result.current.recording).toBe(true);
+		expect(
+			api.traceRecordRequest.mock.calls.some(([event]) => event.stage === "browser-writer-started"),
+		).toBe(false);
+		const recorder = FakeMediaRecorder.instances[0];
+		act(() =>
+			recorder.dispatchEvent(Object.assign(new Event("dataavailable"), { data: new Blob([]) })),
+		);
+		expect(
+			api.traceRecordRequest.mock.calls.some(([event]) => event.stage === "browser-writer-started"),
+		).toBe(false);
+		if (outcome !== "data") {
+			recorder.state = "inactive";
+			act(() => recorder.dispatchEvent(new Event(outcome)));
+			expect(api.traceRecordRequest).toHaveBeenCalledWith({
+				token: 9002,
+				stage: "writer-failed",
+				flags: {},
+			});
+			expect(receiveRecordRequest(9004)).toBe(true);
+			traceRecordRequest("cleanup", { captureStarted: false });
+			return;
+		}
+		act(() =>
+			recorder.dispatchEvent(
+				Object.assign(new Event("dataavailable"), { data: new Blob(["encoded video"]) }),
+			),
+		);
+		expect(api.traceRecordRequest).toHaveBeenCalledWith({
+			token: 9002,
+			stage: "browser-writer-started",
+			flags: { recordingId: expect.any(Number) },
+		});
+	});
+
 	it("handles rapid primary Record clicks with a single pending start", async () => {
 		const view = renderHook(() => useScreenRecorder());
 		act(() => {
@@ -433,6 +589,41 @@ describe("useScreenRecorder native Linux stop failure", () => {
 		expect(window.electronAPI.startNativeMacRecording).not.toHaveBeenCalled();
 		expect(view.result.current.recording).toBe(false);
 		expect(view.result.current.starting).toBe(false);
+	});
+
+	it("a Studio start-only request cannot cancel an idle Linux source preparation", async () => {
+		let resolveChoice: (result: { success: false; error: string }) => void = () => undefined;
+		const prepare = vi.fn(
+			() =>
+				new Promise<{ success: false; error: string }>((resolve) => {
+					resolveChoice = resolve;
+				}),
+		);
+		const cancel = vi.fn(async () => ({ success: true }));
+		stubNativeLinux({ prepareNativeLinuxRecording: prepare, cancelNativeLinuxPrepare: cancel });
+		const progress = vi.fn();
+		window.electronAPI.traceRecordRequest = progress;
+		const view = renderHook(() => useScreenRecorder());
+		let choosing: Promise<unknown> | undefined;
+		act(() => {
+			choosing = view.result.current.chooseRecordingSource();
+		});
+		receiveRecordRequest(9003);
+		act(() => view.result.current.startRecordingFromRequest());
+		await settle();
+		expect(cancel).not.toHaveBeenCalled();
+		expect(window.electronAPI.startNativeMacRecording).not.toHaveBeenCalled();
+		expect(progress).toHaveBeenCalledWith(
+			expect.objectContaining({
+				token: 9003,
+				stage: "hook-entry",
+				flags: expect.objectContaining({ sourceSelectionInFlight: true }),
+			}),
+		);
+		await act(async () => {
+			resolveChoice({ success: false, error: "The screen capture request was cancelled." });
+			await choosing;
+		});
 	});
 
 	it("blocks Record and duplicate source choices while the idle picker is pending, and unlocks after cancellation", async () => {

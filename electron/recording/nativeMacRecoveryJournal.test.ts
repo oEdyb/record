@@ -295,7 +295,7 @@ describe("native macOS recovery journal", () => {
 		const activePath = path.join(recordingsDir, "recording-42-clip-0002.mp4");
 		await fs.writeFile(firstPath, "finalized");
 		await fs.writeFile(activePath, Buffer.alloc(70 * 1024));
-		const session: RecordingSession = {
+		const session = {
 			schemaVersion: 2,
 			createdAt: 42,
 			screenVideoPath: firstPath,
@@ -308,7 +308,7 @@ describe("native macOS recovery journal", () => {
 					provisionalDuration: true,
 				},
 			],
-		};
+		} satisfies RecordingSession;
 		await persistNativeMacRecoveryJournal(recordingsDir, session);
 
 		const measured = {

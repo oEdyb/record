@@ -1,5 +1,7 @@
 import type { RecordingSessionClip } from "../../src/lib/recordingSession";
 import type { TranscriptSnapshot } from "../transcript/liveTranscript";
+import { RecordRequest } from "./recordRequest";
+import { recordRequestTrace } from "./recordRequestTrace";
 import {
 	IDLE_PILL_STATE,
 	type StudioCommand,
@@ -97,8 +99,49 @@ export class StudioController {
 	private handoff = 0;
 	private finishTimer: ReturnType<typeof setTimeout> | undefined;
 	private readonly fade: WindowFade;
+	private readonly recordRequest: RecordRequest;
 	constructor(private readonly deps: StudioControllerDeps) {
 		this.fade = new WindowFade(() => Boolean(deps.motionEnabled?.()));
+		this.recordRequest = new RecordRequest({
+			owner: () => this.deps.getPill()?.webContents ?? null,
+			ensure: () => this.deps.ensurePill?.(),
+			send: (token) => {
+				this.deps.sendToPill("hud-start-recording", token);
+			},
+			take: this.deps.take,
+		});
+	}
+
+	async requestRecord() {
+		const pending = this.recordRequest.start();
+		this.publish();
+		const result = await pending;
+		if (result.success) {
+			this.review = null;
+		}
+		this.publish();
+		return result;
+	}
+	isRecordingOwner(sender: object) {
+		return this.deps.getPill()?.webContents === sender;
+	}
+
+	recordReady(sender: object, ready: boolean) {
+		this.recordRequest.ready(sender, ready);
+	}
+	recordUnavailable(sender: object) {
+		this.recordRequest.unavailable(sender);
+	}
+
+	recordProgress(
+		sender: object,
+		token: number,
+		stage: string,
+		flags: Record<string, boolean | number | null>,
+	) {
+		if (!this.recordRequest.accepts(sender, token)) return;
+		recordRequestTrace.add(token, stage, flags);
+		this.recordRequest.progress(sender, token, stage, flags);
 	}
 
 	snapshot(): StudioSnapshot {
@@ -117,7 +160,9 @@ export class StudioController {
 			shown: this.visible(),
 			transcript: this.deps.transcript(),
 			setup: this.deps.setup(),
-			pill: this.pill,
+			pill: this.recordRequest.isPending()
+				? { ...this.pill, controlsLocked: true, transportBusy: true }
+				: this.pill,
 		};
 	}
 
@@ -211,12 +256,7 @@ export class StudioController {
 		// Leaving a stopped take, by Finish or by going back to the pill, hands it to the review.
 		if (command === "finish" || (command === "pill" && this.reviewing())) return this.finish();
 		if (command === "pill") return this.backToPill();
-		if (command === "record") {
-			if (take?.running) return;
-			this.review = null;
-			this.deps.sendToPill("hud-start-recording");
-			return;
-		}
+		if (command === "record") return this.requestRecord();
 		if (command === "record-more") return;
 		if (!take?.running) return;
 		if (command === "pause" && !take.paused) this.deps.sendToPill("hud-toggle-recording-pause");
@@ -329,7 +369,7 @@ export class StudioController {
 	}
 
 	private finish() {
-		if (!this.reviewing()) return;
+		if (!this.reviewing() || this.recordRequest.isPending()) return;
 		// Opening the review while the pill still attaches camera clips would cut that save short.
 		if (this.pill.saving) {
 			this.finishWhenSaved = true;

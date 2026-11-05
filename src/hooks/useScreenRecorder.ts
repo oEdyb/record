@@ -39,6 +39,7 @@ import {
 	normalizeRecordingQuality,
 	type RecordingQuality,
 } from "@/lib/recording/recordingQuality";
+import { traceRecordRequest } from "@/lib/recording/recordRequestTrace";
 import { NativeMacWebcamClipLedger } from "@/lib/recording/webcamSidecars";
 import type { CursorCaptureMode, RecordingSessionClip } from "@/lib/recordingSession";
 import { requestCameraAccess } from "@/lib/requestCameraAccess";
@@ -104,6 +105,7 @@ type UseScreenRecorderReturn = {
 	activeClipElapsedMs: number;
 	recordedClips: RecordingSessionClip[];
 	toggleRecording: () => void;
+	startRecordingFromRequest: () => void;
 	/** Starts recording with no countdown overlay. Used by the headless CLI runner. */
 	startRecordingImmediately: () => Promise<void>;
 	togglePaused: () => void;
@@ -295,6 +297,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	const startMarks = useRef<RecordStartMark[]>([]);
 	const markStart = (stage: string) => {
 		startMarks.current.push({ stage, atMs: Date.now() });
+		traceRecordRequest(stage);
 	};
 	const pendingStartRunId = useRef<number | null>(null);
 	const recordingStartPending = useRef(false);
@@ -1357,6 +1360,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			segmentStartedAt.current = Date.now();
 			allowAutoFinalize.current = true;
 			setRecording(true);
+			traceRecordRequest("windows-writer-started", { recordingId: result.recordingId });
 			setPaused(false);
 			setElapsedSeconds(0);
 			return true;
@@ -1538,6 +1542,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			const readStartupFailure = (): NativeMacRecordingFailure | null =>
 				nativeMacStartFailure.current;
 			const result = await window.electronAPI.startNativeMacRecording(request);
+			if (!result.success) traceRecordRequest("writer-failed");
 			boundStart = result.rendererStop;
 			if (!result.success || !result.recordingId) {
 				throw new Error(result.error ?? "Native capture failed.");
@@ -1594,6 +1599,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			segmentStartedAt.current = activeClipStartedAt.current;
 			allowAutoFinalize.current = true;
 			setRecording(true);
+			traceRecordRequest("writer-started", { recordingId: result.recordingId });
 			setPaused(false);
 			setElapsedSeconds(
 				Math.floor(Math.max(0, Date.now() - (segmentStartedAt.current ?? Date.now())) / 1000),
@@ -1635,8 +1641,30 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	const buildNativeLinuxRequest = (activeRecordingId = Date.now()) =>
 		currentNativeMacRequest({ id: "portal:selected" }, activeRecordingId);
 
+	const hasCaptureWriter = () =>
+		nativeMacRecording.current !== null ||
+		nativeWindowsRecording.current !== null ||
+		screenRecorder.current?.recorder.state === "recording";
+
 	const startRecordCountdown = async () => {
-		if (pendingStartRunId.current !== null || recording || sourceSelectionInFlight.current) return;
+		traceRecordRequest("hook-entry", {
+			pending: pendingStartRunId.current !== null,
+			recording,
+			sourceSelectionInFlight: sourceSelectionInFlight.current,
+			writerPending:
+				recordingStartPending.current ||
+				nativeMacRecording.current !== null ||
+				nativeWindowsRecording.current !== null ||
+				screenRecorder.current !== null,
+		});
+		if (
+			pendingStartRunId.current !== null ||
+			recording ||
+			sourceSelectionInFlight.current ||
+			recordingStartPending.current ||
+			hasCaptureWriter()
+		)
+			return;
 
 		takeUsesSystemCursor.current = false;
 		startMarks.current = [];
@@ -1687,11 +1715,12 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			if (!isCountdownRunActive(runId)) return;
 
 			await startRecording(runId, preparedRecordingId);
-			captureStarted = nativeMacRecording.current !== null;
+			captureStarted = hasCaptureWriter();
 			if (!isCountdownRunActive(runId)) return;
 			if (window.electronAPI.getPlatform() !== "linux")
 				await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
 		} catch (error) {
+			traceRecordRequest("prepare-failed");
 			console.error("Failed to prepare recording:", error);
 			toast.error(error instanceof Error ? error.message : "Failed to prepare recording");
 		} finally {
@@ -1701,6 +1730,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			}
 			if (portalOwnsSource && !captureStarted) void window.electronAPI.cancelNativeLinuxPrepare?.();
 			if (pendingStartRunId.current === runId) pendingStartRunId.current = null;
+			traceRecordRequest("cleanup", { captureStarted });
 		}
 	};
 
@@ -1708,6 +1738,13 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		countdownRunToken?: number,
 		preparedRecordingId?: number | null,
 	) => {
+		traceRecordRequest("start-entry", {
+			pending: recordingStartPending.current,
+			selectionInFlight: sourceSelectionInFlight.current,
+			nativeMacWriter: nativeMacRecording.current !== null,
+			nativeWindowsWriter: nativeWindowsRecording.current !== null,
+			browserWriter: screenRecorder.current !== null,
+		});
 		if (
 			recordingStartPending.current ||
 			sourceSelectionInFlight.current ||
@@ -1959,6 +1996,23 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				},
 				`${RECORDING_FILE_PREFIX}${activeRecordingId}${VIDEO_FILE_EXTENSION}`,
 			);
+			const browserRecorder = screenRecorder.current.recorder;
+			let browserWriterSettled = false;
+			const confirmBrowserWriter = (event: BlobEvent) => {
+				if (browserWriterSettled || !event.data || event.data.size === 0) return;
+				browserWriterSettled = true;
+				browserRecorder.removeEventListener("dataavailable", confirmBrowserWriter);
+				traceRecordRequest("browser-writer-started", { recordingId: activeRecordingId });
+			};
+			const failBeforeFirstChunk = () => {
+				if (browserWriterSettled) return;
+				browserWriterSettled = true;
+				browserRecorder.removeEventListener("dataavailable", confirmBrowserWriter);
+				traceRecordRequest("writer-failed");
+			};
+			browserRecorder.addEventListener("dataavailable", confirmBrowserWriter);
+			browserRecorder.addEventListener("error", failBeforeFirstChunk, { once: true });
+			browserRecorder.addEventListener("stop", failBeforeFirstChunk, { once: true });
 			screenRecorder.current.recorder.addEventListener(
 				"error",
 				() => {
@@ -2562,6 +2616,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		activeClipElapsedMs,
 		recordedClips,
 		toggleRecording,
+		startRecordingFromRequest: () => {
+			void startRecordCountdown();
+		},
 		preferencesReady,
 		startRecordingImmediately: () => startRecording(),
 		togglePaused,

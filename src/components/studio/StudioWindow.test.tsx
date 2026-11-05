@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { normalizeStudioLayout, saveUserPreferences } from "@/lib/userPreferences";
 import type { StudioSnapshot } from "../../../electron/studio/types";
 import { TooltipProvider } from "../ui/tooltip";
 import { StudioWindow } from "./StudioWindow";
 
+vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 vi.mock("@/contexts/I18nContext", () => ({ useScopedT: () => (key: string) => key }));
 vi.mock("@/hooks/useAudioLevelMeter", () => ({ useAudioLevelMeter: () => ({ level: 20 }) }));
 vi.mock("@/hooks/useMicrophoneDevices", () => ({ useMicrophoneDevices: () => ({ devices: [] }) }));
@@ -127,6 +129,14 @@ describe("Studio phase controls", () => {
 		);
 		expect(screen.getAllByRole("status")).toHaveLength(1);
 	});
+	it("shows the actual Record failure and releases its pending control", async () => {
+		command.mockResolvedValueOnce({ success: false, error: "Recording controls are busy." });
+		mount(snapshot("idle"));
+		fireEvent.click(await screen.findByRole("button", { name: "recordingReview.record" }));
+		await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Recording controls are busy."));
+		expect(screen.getByRole("button", { name: "recordingReview.record" })).not.toBeDisabled();
+	});
+
 	it("asks the pill for the Linux portal instead of enumerating an empty picker", async () => {
 		mount(snapshot("idle"), "linux");
 		fireEvent.click(await screen.findByRole("button", { name: "Display" }));

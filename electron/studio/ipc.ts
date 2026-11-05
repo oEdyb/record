@@ -1,5 +1,6 @@
 import { normalizeRecordingQuality } from "../../src/lib/recording/recordingQuality";
 import type { RendererIpcMain } from "../ipc/trustedRendererIpc";
+import { parseRecordRequestProgress } from "./recordRequestProgress";
 import type { StudioController } from "./studioController";
 import type { StudioCommand, StudioPillState, StudioSimpleCommand } from "./types";
 
@@ -60,14 +61,33 @@ export function parsePillState(raw: unknown): StudioPillState | null {
 
 /** Studio window contract: read the take, ask for a command. The pill opens the Studio. */
 export function registerStudioIpc(ipcMain: RendererIpcMain, studio: StudioController) {
+	ipcMain.on("record-request-trace", (event, raw: unknown) => {
+		const entry = parseRecordRequestProgress(raw);
+		if (entry) studio.recordProgress(event.sender, entry.token, entry.stage, entry.flags);
+	});
+	const observed = new WeakSet<object>();
+	ipcMain.on("studio-record-ready", (event, ready: unknown) => {
+		studio.recordReady(event.sender, ready === true);
+		if (!studio.isRecordingOwner(event.sender) || observed.has(event.sender)) return;
+		observed.add(event.sender);
+		event.sender.on("did-start-navigation", () => studio.recordUnavailable(event.sender));
+		event.sender.on("render-process-gone", () => studio.recordUnavailable(event.sender));
+		event.sender.on("destroyed", () => studio.recordUnavailable(event.sender));
+	});
+	ipcMain.handle("studio-record", () => studio.requestRecord());
 	ipcMain.handle("studio-open", () => {
 		studio.open();
 		return { opened: true };
 	});
 	ipcMain.handle("studio-snapshot", () => studio.snapshot());
-	ipcMain.on("studio-command", (_event, raw: unknown) => {
+	ipcMain.on("studio-command", (event, raw: unknown) => {
 		const command = parseStudioCommand(raw);
-		if (command) studio.command(command);
+		if (!command) return;
+		const result = studio.command(command);
+		if (result)
+			void result.then((outcome) => {
+				if (!event.sender.isDestroyed()) event.sender.send("studio-record-result", outcome);
+			});
 	});
 	ipcMain.on("studio-pill-needs-user", () => studio.pillNeedsUser());
 	ipcMain.on("studio-pill-notice", (_event, active: unknown) => studio.pillNotice(active === true));

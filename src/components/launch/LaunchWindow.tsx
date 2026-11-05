@@ -4,6 +4,7 @@ import { flushSync } from "react-dom";
 import { toast } from "sonner";
 import { useI18n, useScopedT } from "@/contexts/I18nContext";
 import { getAvailableLocales, getLocaleName } from "@/i18n/loader";
+import { receiveRecordRequest, traceRecordRequest } from "@/lib/recording/recordRequestTrace";
 import type { RecordingSessionClip } from "@/lib/recordingSession";
 import { loadUserPreferences, saveUserPreferences } from "@/lib/userPreferences";
 import { nativeBridgeClient } from "@/native";
@@ -12,7 +13,7 @@ import { useAudioLevelMeter } from "../../hooks/useAudioLevelMeter";
 import { type CameraDevice, useCameraDevices } from "../../hooks/useCameraDevices";
 import { useCameraPreviewFrameBridge } from "../../hooks/useCameraPreviewFrameBridge";
 import { type MicrophoneDevice, useMicrophoneDevices } from "../../hooks/useMicrophoneDevices";
-import { usePortalOwnsSource } from "../../hooks/usePortalOwnsSource";
+import { usePortalSourceState } from "../../hooks/usePortalOwnsSource";
 import { useScreenRecorder } from "../../hooks/useScreenRecorder";
 import {
 	type CapturePermissionKind,
@@ -164,6 +165,7 @@ export function LaunchWindow() {
 		activeClipElapsedMs,
 		recordedClips,
 		toggleRecording,
+		startRecordingFromRequest,
 		togglePaused,
 		selectRecordingSource,
 		chooseRecordingSource,
@@ -224,7 +226,7 @@ export function LaunchWindow() {
 	 * falls back to Chromium's capture, which DOES take a source id, so the
 	 * in-app picker has to stay for that case.
 	 */
-	const portalOwnsSource = usePortalOwnsSource();
+	const { ownsSource: portalOwnsSource, ready: portalReady } = usePortalSourceState();
 	const presentation = useRecordingHudPresentation(recording, saving, {
 		paused,
 		elapsedSeconds,
@@ -595,6 +597,7 @@ export function LaunchWindow() {
 				action();
 				return;
 			}
+			traceRecordRequest("permission-required");
 			openPermissionPanel(permissions, action);
 		},
 		[openPermissionPanel],
@@ -1084,7 +1087,7 @@ export function LaunchWindow() {
 			}
 
 			recordAfterSourceSelectionRef.current = false;
-			toggleRecording();
+			startRecordingFromRequest();
 		});
 		const cleanupSelectorClosed = window.electronAPI?.onSourceSelectorClosed?.(() => {
 			recordAfterSourceSelectionRef.current = false;
@@ -1094,7 +1097,7 @@ export function LaunchWindow() {
 			cleanupSourceChanged?.();
 			cleanupSelectorClosed?.();
 		};
-	}, [applySelectedSource, recording, toggleRecording]);
+	}, [applySelectedSource, recording, startRecordingFromRequest]);
 
 	// With screen access granted, the picker opens as a panel above the pill. The
 	// standalone window remains the path that asks macOS for access first, and Linux's.
@@ -1181,7 +1184,8 @@ export function LaunchWindow() {
 	}, [closeSourcePanel, isSourcePanelOpen, openSourceSelector]);
 
 	const handleRecordButtonClick = useCallback(
-		(sourceSelectedOverride?: boolean) => {
+		(sourceSelectedOverride?: boolean, startOnly = false) => {
+			const start = startOnly ? startRecordingFromRequest : toggleRecording;
 			if (saving) {
 				return;
 			}
@@ -1189,10 +1193,16 @@ export function LaunchWindow() {
 			// it to select, and waiting for a selection that can never arrive left
 			// the record button opening a modal instead of recording.
 			const sourceSelected = portalOwnsSource || (sourceSelectedOverride ?? hasSelectedSource);
+			traceRecordRequest("route", { sourceSelected, recording, saving });
 			if (!sourceSelected && !recording) {
 				recordAfterSourceSelectionRef.current = true;
+				window.electronAPI?.studioPillNeedsUser?.();
 				void openSourceSelector()
 					.then((result) => {
+						traceRecordRequest("selector-result", {
+							opened: result.opened,
+							portalOwnsSelection: result.reason === "portal-owns-selection",
+						});
 						if (result.opened) {
 							return;
 						}
@@ -1205,17 +1215,18 @@ export function LaunchWindow() {
 						// all. Honouring the refusal starts the recording instead,
 						// whatever the local state has caught up to.
 						if (result.reason === "portal-owns-selection" && !recording) {
-							toggleRecording();
+							start();
 						}
 					})
 					.catch(() => {
+						traceRecordRequest("selector-rejected");
 						recordAfterSourceSelectionRef.current = false;
 					});
 				return;
 			}
 
 			if (!recording) {
-				runWithCapturePermissions(toggleRecording);
+				runWithCapturePermissions(start);
 				return;
 			}
 			toggleRecording();
@@ -1227,6 +1238,7 @@ export function LaunchWindow() {
 			recording,
 			runWithCapturePermissions,
 			saving,
+			startRecordingFromRequest,
 			toggleRecording,
 		],
 	);
@@ -1320,12 +1332,28 @@ export function LaunchWindow() {
 		recording,
 	]);
 
+	const recordRequestHandler = useRef<(token?: number) => void>(() => undefined);
+	recordRequestHandler.current = (token) => {
+		if (!receiveRecordRequest(token)) return;
+		traceRecordRequest("receipt", { recording, starting, saving, hasSelectedSource });
+		if (recording || starting || saving) {
+			traceRecordRequest("renderer-guard", { recording, starting, saving });
+			return;
+		}
+		handleRecordButtonClick(undefined, true);
+	};
 	useEffect(() => {
-		return window.electronAPI?.onHudStartRecording?.(() => {
-			if (recording || starting || saving) return;
-			handleRecordButtonClick();
-		});
-	}, [handleRecordButtonClick, recording, saving, starting]);
+		if (!sourceReady || !portalReady || !preferencesReady) return;
+		const unsubscribe = window.electronAPI?.onHudStartRecording?.((token) =>
+			recordRequestHandler.current(token),
+		);
+		if (!unsubscribe) return;
+		window.electronAPI?.setStudioRecordReady?.(true);
+		return () => {
+			window.electronAPI?.setStudioRecordReady?.(false);
+			unsubscribe();
+		};
+	}, [portalReady, preferencesReady, sourceReady]);
 
 	// The Studio's Remove button: the same predicate as the pill's own.
 	useEffect(() => {

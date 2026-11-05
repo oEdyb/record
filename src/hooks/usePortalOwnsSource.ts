@@ -16,8 +16,9 @@ import { portalOwnsSourceSelection } from "@/lib/nativeLinuxRecording";
  *
  * @see portalOwnsSourceSelection for why the answer cannot be `platform === "linux"`.
  */
-export function usePortalOwnsSource(): boolean {
+export function usePortalSourceState(): { ownsSource: boolean; ready: boolean } {
 	const [portalOwnsSource, setPortalOwnsSource] = useState(false);
+	const [ready, setReady] = useState(false);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -26,9 +27,11 @@ export function usePortalOwnsSource(): boolean {
 			if (!window.electronAPI) {
 				return;
 			}
-			const owns = await portalOwnsSourceSelection(window.electronAPI);
-			if (!cancelled) {
-				setPortalOwnsSource(owns);
+			try {
+				const owns = await portalOwnsSourceSelection(window.electronAPI);
+				if (!cancelled) setPortalOwnsSource(owns);
+			} finally {
+				if (!cancelled) setReady(true);
 			}
 		})();
 
@@ -37,5 +40,9 @@ export function usePortalOwnsSource(): boolean {
 		};
 	}, []);
 
-	return portalOwnsSource;
+	return { ownsSource: portalOwnsSource, ready };
+}
+
+export function usePortalOwnsSource(): boolean {
+	return usePortalSourceState().ownsSource;
 }
