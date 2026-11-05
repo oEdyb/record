@@ -4,8 +4,11 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { gunzip, gzip } from "node:zlib";
 import { z } from "zod";
-import { migrateRawDocumentToCurrent } from "../../src/lib/ai-edition/document/migrate";
-import { type AxcutDocument, documentSchema } from "../../src/lib/ai-edition/schema";
+import {
+	type AxcutDocument,
+	documentSchema,
+	migrateRawDocumentToCurrent,
+} from "../../src/lib/ai-edition/schema";
 import type { ProjectTransactionReceipt, ProjectTransactionVersion } from "./projectTransactions";
 
 const compress = promisify(gzip);
