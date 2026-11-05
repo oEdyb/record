@@ -1145,6 +1145,13 @@ impl Muxer {
         unsafe {
             let written = ff::av_write_trailer(self.fmt);
             self.header_written = false;
+            // A buffered write can fail only when the file is closed. Stop must
+            // report that failure rather than commit a silently truncated clip.
+            let closed = ff::osc_format_close_io(self.fmt);
+            if closed < 0 {
+                self.write_failed = true;
+                return Err(format!("closing recording: {}", ff::err_to_string(closed)));
+            }
             if written < 0 {
                 self.write_failed = true;
                 return Err(format!("av_write_trailer: {}", ff::err_to_string(written)));
@@ -1166,7 +1173,9 @@ impl Drop for Muxer {
             if self.header_written {
                 ff::av_write_trailer(self.fmt);
             }
-            ff::osc_format_close_io(self.fmt);
+            if ff::osc_format_close_io(self.fmt) < 0 {
+                self.write_failed = true;
+            }
             ff::avformat_free_context(self.fmt);
             self.fmt = ptr::null_mut();
         }

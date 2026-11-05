@@ -717,6 +717,16 @@ fn ready_event_reports_screen_epoch_before_encoder_ack() {
 #[test]
 #[ignore = "requires KLIPPT_FULL_DISK_TEST_DIR on an isolated capped tmpfs"]
 fn disk_full_during_capture_reports_failure_and_retains_readable_fragments() {
+    assert_full_disk(false);
+}
+
+#[test]
+#[ignore = "requires KLIPPT_FULL_DISK_TEST_DIR on an isolated capped tmpfs"]
+fn disk_full_at_stop_reports_failure_and_retains_readable_fragments() {
+    assert_full_disk(true);
+}
+
+fn assert_full_disk(at_stop: bool) {
     use std::io::Write;
     let directory =
         PathBuf::from(std::env::var_os("KLIPPT_FULL_DISK_TEST_DIR").expect("private tmpfs"));
@@ -742,9 +752,17 @@ fn disk_full_during_capture_reports_failure_and_retains_readable_fragments() {
     let mut bytes = Vec::new();
     let mut emitter = Emitter::new(&mut bytes, false);
     clips.connected();
-    for _ in 0..100 {
+    for index in 0..100 {
+        let mut image = frame();
+        if at_stop {
+            let mut random = index as u32 + 1;
+            for byte in &mut image.pixels {
+                random = random.wrapping_mul(1664525).wrapping_add(1013904223);
+                *byte = (random >> 24) as u8;
+            }
+        }
         clips
-            .frame(frame(), &mut emitter)
+            .frame(image, &mut emitter)
             .expect("initial healthy capture");
         std::thread::sleep(Duration::from_millis(34));
     }
@@ -759,7 +777,7 @@ fn disk_full_during_capture_reports_failure_and_retains_readable_fragments() {
     assert_eq!(error.raw_os_error(), Some(28) /* Linux ENOSPC */);
     drop(fill);
     let mut failure = None;
-    for _ in 0..100 {
+    for _ in 0..if at_stop { 0 } else { 100 } {
         match clips.frame(frame(), &mut emitter) {
             Ok(()) => std::thread::sleep(Duration::from_millis(34)),
             Err(message) => {
@@ -769,13 +787,18 @@ fn disk_full_during_capture_reports_failure_and_retains_readable_fragments() {
             }
         }
     }
+    if !at_stop {
+        assert!(
+            failure
+                .as_deref()
+                .is_some_and(|message| message.contains("No space left")),
+            "{failure:?}"
+        );
+    }
     assert!(
-        failure
-            .as_deref()
-            .is_some_and(|message| message.contains("No space left")),
-        "{failure:?}"
+        clips.stop(&mut emitter).is_err(),
+        "Stop must report the write failure"
     );
-    let _ = clips.stop(&mut emitter);
     drop(clips);
     std::fs::remove_file(filler).expect("free private tmpfs");
     let events = values(&bytes);

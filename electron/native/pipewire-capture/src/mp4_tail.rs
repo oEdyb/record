@@ -8,18 +8,23 @@ pub fn retain_complete_fragments(path: &Path) -> std::io::Result<()> {
     let length = file.metadata()?.len();
     let mut offset = 0u64;
     let mut pending_fragment = None;
+    let mut last_complete_fragment = None;
     while offset < length {
         file.seek(SeekFrom::Start(offset))?;
         let mut header = [0u8; 8];
         if length - offset < 8 {
-            if let Some(start) = pending_fragment {
+            if let Some(start) = pending_fragment.or(last_complete_fragment) {
                 file.set_len(start)?;
+                file.sync_all()?;
             }
             break;
         }
         file.read_exact(&mut header)?;
         let mut size = u32::from_be_bytes(header[..4].try_into().unwrap()) as u64;
         let kind = &header[4..];
+        if kind == b"moof" {
+            pending_fragment = Some(offset);
+        }
         let header_size = if size == 1 {
             let mut large = [0u8; 8];
             if length - offset < 16 {
@@ -49,7 +54,8 @@ pub fn retain_complete_fragments(path: &Path) -> std::io::Result<()> {
             }
             break;
         }
-        if kind == b"mdat" {
+        if kind == b"mdat" && pending_fragment.is_some() {
+            last_complete_fragment = Some(offset + size);
             pending_fragment = None;
         }
         offset += size;
@@ -87,6 +93,15 @@ mod tests {
         let mut bytes = COMPLETE.to_vec();
         bytes.extend_from_slice(b"\0\0\0\x08moof\0\0\0\x20mdatcut");
         check(&bytes, COMPLETE);
+    }
+    #[test]
+    fn retains_the_prefix_at_every_interrupted_fragment_header_boundary() {
+        let next = b"\0\0\0\x08moof\0\0\0\x0cmdatmore";
+        for length in 1..next.len() {
+            let mut bytes = COMPLETE.to_vec();
+            bytes.extend_from_slice(&next[..length]);
+            check(&bytes, COMPLETE);
+        }
     }
     #[test]
     fn does_not_guess_at_unknown_or_eof_sized_boxes() {
