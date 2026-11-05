@@ -69,3 +69,36 @@ it("does not bypass rejected paths or approve invalid documents", async () => {
 		await approveCurrentProjectMedia({ media: {} }, undefined, "/recordings", approve),
 	).toBeNull();
 });
+
+it("keeps screen approval when optional audio cannot be granted", async () => {
+	const document = createEmptyDocument({ projectId: "p", title: "Proof" });
+	document.assets = [
+		{
+			id: "a",
+			kind: "video",
+			label: "Screen",
+			originalPath: "/proof/screen.mp4",
+			cameraTrack: null,
+			microphoneAudioPath: "/proof/mic.mov",
+			systemAudioPath: "/proof/system.mov",
+		},
+	];
+	const approveAudio = vi.fn(async () => {
+		throw new Error("Audio outside trusted folder");
+	});
+	const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+	try {
+		const result = await approveCurrentProjectMedia(
+			document,
+			"/proof/edit.klippt",
+			"/recordings",
+			async (file) => file,
+			approveAudio,
+		);
+		expect(result?.screenVideoPath).toBe("/proof/screen.mp4");
+		expect(approveAudio).toHaveBeenCalledTimes(2);
+		expect(warning).toHaveBeenCalledTimes(2);
+	} finally {
+		warning.mockRestore();
+	}
+});

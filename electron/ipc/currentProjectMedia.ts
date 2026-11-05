@@ -14,12 +14,19 @@ export async function approveCurrentProjectMedia(
 	const parsed = documentSchema.parse(migrateRawDocumentToCurrent(project));
 	const trusted = [recordingsDirectory];
 	if (projectFilePath) trusted.push(path.dirname(path.resolve(projectFilePath)));
-	for (const asset of parsed.audioAssets ?? []) await approveAudio?.(asset.originalPath, trusted);
+	const approveOptionalAudio = async (file: string) => {
+		try {
+			await approveAudio?.(file, trusted);
+		} catch (error) {
+			console.warn("Could not approve optional project audio", file, error);
+		}
+	};
+	for (const asset of parsed.audioAssets ?? []) await approveOptionalAudio(asset.originalPath);
 	let primary: RecordingSession | null = null;
 	for (const asset of parsed.assets) {
 		if (asset.kind !== "video") continue;
 		for (const source of [asset.microphoneAudioPath, asset.systemAudioPath])
-			if (source) await approveAudio?.(source, trusted);
+			if (source) await approveOptionalAudio(source);
 		const screenVideoPath = await approve(asset.originalPath, trusted);
 		const webcamVideoPath = asset.cameraTrack?.sourcePath
 			? await approve(asset.cameraTrack.sourcePath, trusted)
