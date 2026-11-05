@@ -104,6 +104,7 @@ export type NativeMacRecordingServiceDependencies = {
 	registerMediaLinks: (
 		screenVideoPath: string,
 		cursorCaptureMode: CursorCaptureMode,
+		clip?: RecordingSessionClip,
 	) => Promise<void>;
 	onSessionStored: (session: RecordingSession) => void;
 	onRecordingStateChange: (recording: boolean) => void;
@@ -946,6 +947,7 @@ export class NativeMacRecordingService {
 						this.deps.registerMediaLinks(
 							clip.screenVideoPath,
 							clip.cursorCaptureMode ?? cursorCaptureMode,
+							clip,
 						),
 					),
 				);

@@ -18,6 +18,8 @@ export async function approveCurrentProjectMedia(
 	let primary: RecordingSession | null = null;
 	for (const asset of parsed.assets) {
 		if (asset.kind !== "video") continue;
+		for (const source of [asset.microphoneAudioPath, asset.systemAudioPath])
+			if (source) await approveAudio?.(source, trusted);
 		const screenVideoPath = await approve(asset.originalPath, trusted);
 		const webcamVideoPath = asset.cameraTrack?.sourcePath
 			? await approve(asset.cameraTrack.sourcePath, trusted)

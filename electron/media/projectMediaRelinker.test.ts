@@ -24,6 +24,54 @@ describe("relinkProjectMedia", () => {
 		vi.restoreAllMocks();
 	});
 
+	it.each([
+		true,
+		false,
+	])("relinks missing original audio when screen already exists: %s", async (screenExists) => {
+		const screen = path.join(tempDir, "recording-a.mp4"),
+			mic = path.join(tempDir, "recording-a-microphone.mov"),
+			system = path.join(tempDir, "recording-a-system.mov");
+		await fs.writeFile(screen, "recorded screen");
+		await fs.writeFile(mic, "mic original");
+		await fs.writeFile(system, "system original");
+		await registerMediaLinks(tempDir, screen, {
+			microphoneAudioPath: mic,
+			systemAudioPath: system,
+		});
+		const asset = {
+			originalPath: screenExists ? screen : "C:\\old\\recording-a.mp4",
+			sizeBytes: Buffer.byteLength("recorded screen"),
+			cameraTrack: null,
+			microphoneAudioPath: "C:\\old\\recording-a-microphone.mov",
+			systemAudioPath: "C:\\old\\recording-a-system.mov",
+		};
+		const result = (await relinkProjectMedia({ assets: [asset] }, tempDir)) as {
+			assets: (typeof asset)[];
+		};
+		expect(result.assets[0].microphoneAudioPath).toBe(mic);
+		expect(result.assets[0].systemAudioPath).toBe(system);
+		expect(asset.microphoneAudioPath).toContain("old");
+	});
+
+	it("does not replace a readable mic or add an unrequested audio role", async () => {
+		const screen = path.join(tempDir, "current.mp4"),
+			selected = path.join(tempDir, "selected.mov"),
+			linked = path.join(tempDir, "linked.mov");
+		await fs.writeFile(screen, "screen");
+		await fs.writeFile(selected, "selected mic");
+		await fs.writeFile(linked, "other mic");
+		await registerMediaLinks(tempDir, screen, {
+			microphoneAudioPath: linked,
+			systemAudioPath: linked,
+		});
+		const asset = { originalPath: screen, cameraTrack: null, microphoneAudioPath: selected };
+		const result = (await relinkProjectMedia({ assets: [asset] }, tempDir)) as {
+			assets: (typeof asset)[];
+		};
+		expect(result.assets[0].microphoneAudioPath).toBe(selected);
+		expect(result.assets[0]).not.toHaveProperty("systemAudioPath");
+	});
+
 	it("relinks stale screen and webcam paths without mutating the loaded project", async () => {
 		const currentScreenPath = path.join(tempDir, "recording-42.mp4");
 		const currentWebcamPath = path.join(tempDir, "recording-42-webcam.mp4");

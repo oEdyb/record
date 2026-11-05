@@ -1338,6 +1338,8 @@ async function registerRecordingMediaLinks(
 	screenVideoPath: string,
 	options: {
 		webcamVideoPath?: string;
+		microphoneAudioPath?: string;
+		systemAudioPath?: string;
 		webcamOffsetMs?: number;
 		cursorCaptureMode?: CursorCaptureMode;
 	},
@@ -1349,6 +1351,8 @@ async function registerRecordingMediaLinks(
 			.then(() => true)
 			.catch(() => false);
 		await registerMediaLinks(RECORDINGS_DIR, screenVideoPath, {
+			...(options.microphoneAudioPath ? { microphoneAudioPath: options.microphoneAudioPath } : {}),
+			...(options.systemAudioPath ? { systemAudioPath: options.systemAudioPath } : {}),
 			...(options.webcamVideoPath ? { webcamVideoPath: options.webcamVideoPath } : {}),
 			...(options.webcamVideoPath && Number.isFinite(options.webcamOffsetMs)
 				? { webcamOffsetMs: options.webcamOffsetMs }
@@ -3111,8 +3115,8 @@ export function registerIpcHandlers(
 			shiftPendingCursorTelemetry(offsetMs);
 			await writePendingCursorTelemetryForClips(clips);
 		},
-		registerMediaLinks: async (screenVideoPath, cursorCaptureMode) => {
-			await registerRecordingMediaLinks(screenVideoPath, { cursorCaptureMode });
+		registerMediaLinks: async (screenVideoPath, cursorCaptureMode, clip) => {
+			await registerRecordingMediaLinks(screenVideoPath, { ...clip, cursorCaptureMode });
 		},
 		onSessionStored: (session) => {
 			setCurrentRecordingSessionState(session);

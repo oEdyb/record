@@ -142,7 +142,11 @@ describe("NativeMacRecordingService", () => {
 		]);
 		expect(deps.stopCursor).toHaveBeenCalledOnce();
 		expect(deps.finalizeCursor).toHaveBeenCalledOnce();
-		expect(deps.registerMediaLinks).toHaveBeenCalledWith(clip.screenVideoPath, "editable-overlay");
+		expect(deps.registerMediaLinks).toHaveBeenCalledWith(
+			clip.screenVideoPath,
+			"editable-overlay",
+			expect.objectContaining(clip),
+		);
 	});
 
 	it("keeps a Mac system-cursor take unchanged by Linux fallback metadata", async () => {

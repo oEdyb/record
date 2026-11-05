@@ -45,7 +45,14 @@ async function resolveAssetMedia(
 	const cameraMissing = cameraPath !== null && !(await fileExists(cameraPath));
 	// Nothing to repair, and this runs on every project open — don't fingerprint
 	// (i.e. open and read) every asset just to confirm what the stats already say.
-	if (screenExists && !cameraMissing) return asset;
+	const audioFields = ["microphoneAudioPath", "systemAudioPath"] as const;
+	const missingAudio = new Set<string>();
+	for (const field of audioFields) {
+		const source = asset[field];
+		if (typeof source === "string" && source && !(await fileExists(source)))
+			missingAudio.add(field);
+	}
+	if (screenExists && !cameraMissing && missingAudio.size === 0) return asset;
 
 	let links: RelocatedMediaLookup | null = null;
 	if (screenExists) {
@@ -81,8 +88,15 @@ async function resolveAssetMedia(
 		nextCameraTrack = { ...cameraTrack, sourcePath: links.webcamVideoPath };
 	}
 
+	const audio: Record<string, string> = {};
+	for (const field of audioFields) {
+		const candidate = links[field];
+		if (missingAudio.has(field) && candidate && (await fileExists(candidate)))
+			audio[field] = candidate;
+	}
 	return {
 		...asset,
+		...audio,
 		originalPath: links.screenVideoPath,
 		...(nextCameraTrack === cameraTrack ? {} : { cameraTrack: nextCameraTrack }),
 	};
