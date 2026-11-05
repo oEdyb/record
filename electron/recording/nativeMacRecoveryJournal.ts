@@ -145,6 +145,7 @@ async function recoverSession(
 			recoveredClips.push({ ...clip, removed: true });
 			continue;
 		}
+		let recoveredDurationMs = clip.durationMs;
 		if (clip.provisionalDuration) {
 			try {
 				const media = await inspectHandoffSourceMedia(clip.screenVideoPath);
@@ -155,6 +156,7 @@ async function recoverSession(
 					media.durationSec <= 0
 				)
 					throw new Error("no readable video duration");
+				recoveredDurationMs = Math.max(1, Math.round(media.durationSec * 1000));
 			} catch (error) {
 				// An unavailable inspector or timeout proves nothing about the media.
 				// Keep unknown tails provisional so the renderer can probe them and offer
@@ -173,7 +175,7 @@ async function recoverSession(
 				);
 			}
 		}
-		const recovered = { ...clip };
+		const recovered = { ...clip, durationMs: recoveredDurationMs };
 		for (const [field, offsetField, suffix, mediaType] of ORIGINAL_FIELDS) {
 			const originalPath = clip[field];
 			if (!originalPath) continue;

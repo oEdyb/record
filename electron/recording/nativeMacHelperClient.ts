@@ -298,7 +298,7 @@ export class NativeMacHelperClient {
 		const pending = new Promise<NativeMacStopResult>((resolve, reject) => {
 			const cleanup = this.observe({
 				timeoutMs: 30_000,
-				timeoutMessage: `Timed out waiting for native capture to stop. Output path: ${fallback.screenPath}. Output: ${this.outputBuffer.trim()}`,
+				timeoutMessage: "Stopping took too long. Klippt will try to recover the saved recording.",
 				onEvent: (event) => {
 					if (event.event === "recording-stopped") {
 						cleanup();

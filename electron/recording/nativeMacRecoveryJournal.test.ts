@@ -80,6 +80,7 @@ describe("native macOS recovery journal", () => {
 		});
 		const recovered = await restoreNativeMacRecoverySession(recordingsDir, 61);
 		expect(recovered?.clips?.[0]).toMatchObject(originals);
+		expect(recovered?.clips?.[0].durationMs).toBe(5950);
 		expect(recovered?.recoveryWarnings).toBeUndefined();
 		expect(inspectHandoffSourceMedia).toHaveBeenCalledTimes(4);
 	});
@@ -310,8 +311,14 @@ describe("native macOS recovery journal", () => {
 		};
 		await persistNativeMacRecoveryJournal(recordingsDir, session);
 
-		await expect(restoreLatestNativeMacRecoverySession(recordingsDir)).resolves.toEqual(session);
-		await expect(restoreNativeMacRecoverySession(recordingsDir, 42)).resolves.toEqual(session);
+		const measured = {
+			...session,
+			clips: session.clips.map((clip) =>
+				clip.provisionalDuration ? { ...clip, durationMs: 500 } : clip,
+			),
+		};
+		await expect(restoreLatestNativeMacRecoverySession(recordingsDir)).resolves.toEqual(measured);
+		await expect(restoreNativeMacRecoverySession(recordingsDir, 42)).resolves.toEqual(measured);
 	});
 
 	it("marks a missing clip removed without losing later recoverable media", async () => {
@@ -361,7 +368,7 @@ describe("native macOS recovery journal", () => {
 			{
 				index: 1,
 				screenVideoPath: laterPath,
-				durationMs: 60_000,
+				durationMs: 500,
 				provisionalDuration: true,
 				cursorCaptureMode: "editable-overlay",
 			},
@@ -429,7 +436,7 @@ describe("native macOS recovery journal", () => {
 			{
 				index: 1,
 				screenVideoPath: shortPath,
-				durationMs: 60_000,
+				durationMs: 500,
 				provisionalDuration: true,
 			},
 		]);
