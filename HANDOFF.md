@@ -1,3 +1,4 @@
+Recording hardening, real failure tests and installed-package evidence: [Linux recording hardening](docs/recording-hardening-2026-11-05.md).
 Mac Record delivery: missing/loading owner reproduced; writer-confirmed requests now
 create the owner and wait for loaded controls. Signed real-window and CLI evidence,
 review fixes and limits: [Record delivery investigation](docs/studio-record-drop-investigation.md).
