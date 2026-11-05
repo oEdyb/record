@@ -101,6 +101,19 @@ try {
 		"Rapid toggles lost original position",
 	);
 
+	// The renderer can receive the compact configure before niri publishes its
+	// corresponding layout. Never treat the previous expanded layout as baseline.
+	for (
+		let i = 0;
+		i < 30 && JSON.stringify(owned().layout.window_size) !== JSON.stringify([312, 186]);
+		i++
+	)
+		await delay(100);
+	assert.deepEqual(
+		owned().layout.window_size,
+		[312, 186],
+		"Rapid collapse did not settle in the compositor",
+	);
 	for (const title of ["Klippt Camera", "Klippt"]) {
 		const win = windows().find((w) => w.title === title && w.pid === app.process().pid);
 		assert(win);
