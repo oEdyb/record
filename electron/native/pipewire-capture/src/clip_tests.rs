@@ -712,3 +712,116 @@ fn ready_event_reports_screen_epoch_before_encoder_ack() {
         .expect("start");
     assert!(start["timestampMs"].as_u64().unwrap() - start["startedAtMs"].as_u64().unwrap() >= 70);
 }
+
+/// Run only on a capped private tmpfs, never a real recordings volume.
+#[test]
+#[ignore = "requires KLIPPT_FULL_DISK_TEST_DIR on an isolated capped tmpfs"]
+fn disk_full_during_capture_reports_failure_and_retains_readable_fragments() {
+    use std::io::Write;
+    let directory =
+        PathBuf::from(std::env::var_os("KLIPPT_FULL_DISK_TEST_DIR").expect("private tmpfs"));
+    let filesystem = std::process::Command::new("stat")
+        .args(["-f", "-c", "%T %S %b"])
+        .arg(&directory)
+        .output()
+        .expect("stat private tmpfs");
+    assert!(filesystem.status.success());
+    let info = String::from_utf8(filesystem.stdout).expect("stat output");
+    let fields: Vec<_> = info.split_whitespace().collect();
+    assert_eq!(fields[0], "tmpfs", "must be tmpfs");
+    let block_size: u64 = fields[1].parse().expect("block size");
+    let blocks: u64 = fields[2].parse().expect("blocks");
+    assert!(block_size * blocks <= 128 * 1024 * 1024, "must be capped");
+    let output = directory.join("full-recording-clip-0001.mp4");
+    let request: Request = serde_json::from_value(serde_json::json!({
+        "outputs": { "screenPath": output }, "cursor": { "mode": "system" },
+        "video": { "fps": 30, "bitrate": 1000000 }
+    }))
+    .expect("request");
+    let mut clips = Clips::new(request, Vec::new(), Some(Backend::Software));
+    let mut bytes = Vec::new();
+    let mut emitter = Emitter::new(&mut bytes, false);
+    clips.connected();
+    for _ in 0..100 {
+        clips
+            .frame(frame(), &mut emitter)
+            .expect("initial healthy capture");
+        std::thread::sleep(Duration::from_millis(34));
+    }
+    let filler = directory.join("fill");
+    let mut fill = std::fs::File::create(&filler).expect("fill file");
+    let chunk = vec![0x40; 1024 * 1024];
+    let error = loop {
+        if let Err(error) = fill.write_all(&chunk) {
+            break error;
+        }
+    };
+    assert_eq!(error.raw_os_error(), Some(28) /* Linux ENOSPC */);
+    drop(fill);
+    let mut failure = None;
+    for _ in 0..100 {
+        match clips.frame(frame(), &mut emitter) {
+            Ok(()) => std::thread::sleep(Duration::from_millis(34)),
+            Err(message) => {
+                clips.fail(&message);
+                failure = Some(message);
+                break;
+            }
+        }
+    }
+    assert!(
+        failure
+            .as_deref()
+            .is_some_and(|message| message.contains("No space left")),
+        "{failure:?}"
+    );
+    let _ = clips.stop(&mut emitter);
+    drop(clips);
+    std::fs::remove_file(filler).expect("free private tmpfs");
+    let events = values(&bytes);
+    assert!(events
+        .iter()
+        .any(|event| event["event"] == "recording-stopped"
+            && event["warning"]["code"] == "final-clip-failed"));
+    let probe = std::process::Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-count_frames",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=nb_read_frames",
+            "-of",
+            "csv=p=0",
+        ])
+        .arg(&output)
+        .output()
+        .expect("probe fragments");
+    eprintln!(
+        "full disk probe stdout={} stderr={}",
+        String::from_utf8_lossy(&probe.stdout),
+        String::from_utf8_lossy(&probe.stderr)
+    );
+    let count: usize = String::from_utf8_lossy(&probe.stdout)
+        .trim()
+        .trim_end_matches(',')
+        .parse()
+        .unwrap_or(0);
+    assert!(
+        count >= 60,
+        "Only {count} frames retained from 100 healthy frames"
+    );
+    let decoded = std::process::Command::new("ffmpeg")
+        .args(["-v", "error", "-xerror", "-threads", "4", "-i"])
+        .arg(&output)
+        .args(["-f", "null", "-"])
+        .output()
+        .expect("decode retained fragments");
+    assert!(
+        decoded.status.success(),
+        "{}",
+        String::from_utf8_lossy(&decoded.stderr)
+    );
+    eprintln!("ENOSPC: {count} screen frames retained; warning delivered");
+}
