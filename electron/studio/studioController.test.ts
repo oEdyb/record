@@ -209,6 +209,24 @@ describe("StudioController", () => {
 		expect(studio.visible()).toBe(false);
 	});
 
+	it("keeps the previous review and Finish available when a new Record fails", async () => {
+		const { controller, studio, pill, sendToPill, openReview } = setup(null);
+		controller.open();
+		studio.ready();
+		controller.stored({
+			recordingId: 17,
+			clips: [{ index: 0, screenVideoPath: "/kept.mp4", durationMs: 500 }],
+		});
+		const result = controller.requestRecord();
+		expect(controller.snapshot().phase).toBe("review");
+		const token = sendToPill.mock.calls[0][1];
+		controller.recordProgress(pill.window.webContents, token, "writer-failed", {});
+		expect((await result).success).toBe(false);
+		expect(controller.snapshot()).toMatchObject({ phase: "review", recordingId: 17 });
+		controller.command("finish");
+		expect(openReview).toHaveBeenCalledOnce();
+	});
+
 	it("opens idle, starts a take through the pill and stays expanded", () => {
 		const { controller, studio, pill, state, sendToPill } = setup(null);
 		controller.open();

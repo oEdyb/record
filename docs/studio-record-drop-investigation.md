@@ -229,3 +229,40 @@ decode: screen H.264 3420×2214; camera H.264 1920×1080; mic/system AAC 48 kHz.
 Source durations for the short clip are screen 0.519730 s, camera 0.420000 s,
 mic 0.352000 s and system 0.439979 s, with original offsets retained. This proves
 short-clip capture/recovery and playback, not measured spoken mic/camera sync.
+
+## Independent review corrections
+
+The first independent review rejected `4d95c18b3`; it was not merged. Follow-up
+changes address the reviewed races and platform paths:
+
+- Listener readiness now waits for source initialization, portal ownership and
+  recording preferences. Preload subscription alone is not application readiness.
+- Studio and tray starts use a start-only hook path. It cannot cancel source
+  preparation/countdown or stop an active writer, even with stale render state.
+- Native Windows confirms only after its native response; browser fallback
+  confirms only after a nonempty encoded data event. Neither is judged using the
+  Mac-only take service. A portal-owned selector result is not treated as failure.
+- A previous Studio review is cleared only after confirmed success. Navigation,
+  renderer exit and destruction invalidate readiness, including before the first
+  request. Completed renderer tokens are cleared; tokenless tray events cannot
+  replace a pending token. The legacy command channel also sends a result.
+- Renderer trace stages and flag keys are allowlisted before storage. Only the
+  current pending owner and token can add renderer progress to the local ring.
+
+Regression coverage mounts LaunchWindow with the real recording hook for
+macOS/Linux/Windows (mocked native boundaries), delays saved-source and portal
+answers, tests both browser fallback platforms at empty/nonempty data events,
+and checks start-only behavior during native startup and Linux source preparation.
+It also covers retained review/Finish, lifecycle invalidation, tokenless tray
+presses and rejected arbitrary trace text. These unit tests do not establish
+physical Windows/Linux capture behavior. A fresh signed Mac pass is still required
+for the follow-up source before merge and installation.
+
+Follow-up verification: 292 focused tests passed before the three additional
+mounted real-hook platform cases; those mounted cases also pass in the 143-test
+LaunchWindow suite. Current full suite: 3,421 passed, 6 known dependency-signature
+failures, 5 skipped. Both typechecks pass; lint passes with one existing
+oversized-file warning. Mac/Linux writer replies still require the matching
+main-process take ID. Native Windows uses its successful native start response;
+browser fallback uses its first nonempty encoded data event from the pending
+owner. Neither relies on the Mac-only take service for confirmation.

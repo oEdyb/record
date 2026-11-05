@@ -1,6 +1,7 @@
 import type { RecordingSessionClip } from "../../src/lib/recordingSession";
 import type { TranscriptSnapshot } from "../transcript/liveTranscript";
 import { RecordRequest } from "./recordRequest";
+import { recordRequestTrace } from "./recordRequestTrace";
 import {
 	IDLE_PILL_STATE,
 	type StudioCommand,
@@ -105,25 +106,39 @@ export class StudioController {
 			owner: () => this.deps.getPill()?.webContents ?? null,
 			ensure: () => this.deps.ensurePill?.(),
 			send: (token) => {
-				this.review = null;
 				this.deps.sendToPill("hud-start-recording", token);
 			},
 			take: this.deps.take,
 		});
 	}
 
-	requestRecord() {
-		return this.recordRequest.start();
+	async requestRecord() {
+		const result = await this.recordRequest.start();
+		if (result.success) {
+			this.review = null;
+			this.publish();
+		}
+		return result;
 	}
+	isRecordingOwner(sender: object) {
+		return this.deps.getPill()?.webContents === sender;
+	}
+
 	recordReady(sender: object, ready: boolean) {
 		this.recordRequest.ready(sender, ready);
 	}
+	recordUnavailable(sender: object) {
+		this.recordRequest.unavailable(sender);
+	}
+
 	recordProgress(
 		sender: object,
 		token: number,
 		stage: string,
 		flags: Record<string, boolean | number | null>,
 	) {
+		if (!this.recordRequest.accepts(sender, token)) return;
+		recordRequestTrace.add(token, stage, flags);
 		this.recordRequest.progress(sender, token, stage, flags);
 	}
 
@@ -237,10 +252,7 @@ export class StudioController {
 		// Leaving a stopped take, by Finish or by going back to the pill, hands it to the review.
 		if (command === "finish" || (command === "pill" && this.reviewing())) return this.finish();
 		if (command === "pill") return this.backToPill();
-		if (command === "record") {
-			void this.requestRecord();
-			return;
-		}
+		if (command === "record") return this.requestRecord();
 		if (command === "record-more") return;
 		if (!take?.running) return;
 		if (command === "pause" && !take.paused) this.deps.sendToPill("hud-toggle-recording-pause");

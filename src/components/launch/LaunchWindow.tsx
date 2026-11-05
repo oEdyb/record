@@ -13,7 +13,7 @@ import { useAudioLevelMeter } from "../../hooks/useAudioLevelMeter";
 import { type CameraDevice, useCameraDevices } from "../../hooks/useCameraDevices";
 import { useCameraPreviewFrameBridge } from "../../hooks/useCameraPreviewFrameBridge";
 import { type MicrophoneDevice, useMicrophoneDevices } from "../../hooks/useMicrophoneDevices";
-import { usePortalOwnsSource } from "../../hooks/usePortalOwnsSource";
+import { usePortalSourceState } from "../../hooks/usePortalOwnsSource";
 import { useScreenRecorder } from "../../hooks/useScreenRecorder";
 import {
 	type CapturePermissionKind,
@@ -165,6 +165,7 @@ export function LaunchWindow() {
 		activeClipElapsedMs,
 		recordedClips,
 		toggleRecording,
+		startRecordingFromRequest,
 		togglePaused,
 		selectRecordingSource,
 		chooseRecordingSource,
@@ -225,7 +226,7 @@ export function LaunchWindow() {
 	 * falls back to Chromium's capture, which DOES take a source id, so the
 	 * in-app picker has to stay for that case.
 	 */
-	const portalOwnsSource = usePortalOwnsSource();
+	const { ownsSource: portalOwnsSource, ready: portalReady } = usePortalSourceState();
 	const presentation = useRecordingHudPresentation(recording, saving, {
 		paused,
 		elapsedSeconds,
@@ -1086,7 +1087,7 @@ export function LaunchWindow() {
 			}
 
 			recordAfterSourceSelectionRef.current = false;
-			toggleRecording();
+			startRecordingFromRequest();
 		});
 		const cleanupSelectorClosed = window.electronAPI?.onSourceSelectorClosed?.(() => {
 			recordAfterSourceSelectionRef.current = false;
@@ -1096,7 +1097,7 @@ export function LaunchWindow() {
 			cleanupSourceChanged?.();
 			cleanupSelectorClosed?.();
 		};
-	}, [applySelectedSource, recording, toggleRecording]);
+	}, [applySelectedSource, recording, startRecordingFromRequest]);
 
 	// With screen access granted, the picker opens as a panel above the pill. The
 	// standalone window remains the path that asks macOS for access first, and Linux's.
@@ -1183,7 +1184,8 @@ export function LaunchWindow() {
 	}, [closeSourcePanel, isSourcePanelOpen, openSourceSelector]);
 
 	const handleRecordButtonClick = useCallback(
-		(sourceSelectedOverride?: boolean) => {
+		(sourceSelectedOverride?: boolean, startOnly = false) => {
+			const start = startOnly ? startRecordingFromRequest : toggleRecording;
 			if (saving) {
 				return;
 			}
@@ -1197,7 +1199,10 @@ export function LaunchWindow() {
 				window.electronAPI?.studioPillNeedsUser?.();
 				void openSourceSelector()
 					.then((result) => {
-						traceRecordRequest("selector-result", { opened: result.opened });
+						traceRecordRequest("selector-result", {
+							opened: result.opened,
+							portalOwnsSelection: result.reason === "portal-owns-selection",
+						});
 						if (result.opened) {
 							return;
 						}
@@ -1210,7 +1215,7 @@ export function LaunchWindow() {
 						// all. Honouring the refusal starts the recording instead,
 						// whatever the local state has caught up to.
 						if (result.reason === "portal-owns-selection" && !recording) {
-							toggleRecording();
+							start();
 						}
 					})
 					.catch(() => {
@@ -1221,7 +1226,7 @@ export function LaunchWindow() {
 			}
 
 			if (!recording) {
-				runWithCapturePermissions(toggleRecording);
+				runWithCapturePermissions(start);
 				return;
 			}
 			toggleRecording();
@@ -1233,6 +1238,7 @@ export function LaunchWindow() {
 			recording,
 			runWithCapturePermissions,
 			saving,
+			startRecordingFromRequest,
 			toggleRecording,
 		],
 	);
@@ -1327,16 +1333,32 @@ export function LaunchWindow() {
 	]);
 
 	useEffect(() => {
-		return window.electronAPI?.onHudStartRecording?.((token) => {
-			receiveRecordRequest(token);
+		if (!sourceReady || !portalReady || !preferencesReady) return;
+		const unsubscribe = window.electronAPI?.onHudStartRecording?.((token) => {
+			if (!receiveRecordRequest(token)) return;
 			traceRecordRequest("receipt", { recording, starting, saving, hasSelectedSource });
 			if (recording || starting || saving) {
 				traceRecordRequest("renderer-guard", { recording, starting, saving });
 				return;
 			}
-			handleRecordButtonClick();
+			handleRecordButtonClick(undefined, true);
 		});
-	}, [handleRecordButtonClick, hasSelectedSource, recording, saving, starting]);
+		if (!unsubscribe) return;
+		window.electronAPI?.setStudioRecordReady?.(true);
+		return () => {
+			window.electronAPI?.setStudioRecordReady?.(false);
+			unsubscribe();
+		};
+	}, [
+		handleRecordButtonClick,
+		hasSelectedSource,
+		portalReady,
+		preferencesReady,
+		recording,
+		saving,
+		sourceReady,
+		starting,
+	]);
 
 	// The Studio's Remove button: the same predicate as the pill's own.
 	useEffect(() => {

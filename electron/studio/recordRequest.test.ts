@@ -73,4 +73,53 @@ describe("Record delivery and writer acknowledgement", () => {
 		expect(send).toHaveBeenCalledOnce();
 		expect(recordRequestTrace.read().at(-1)?.stage).toBe("timeout:source-read");
 	});
+	it.each([
+		"windows-writer-started",
+		"browser-writer-started",
+	])("accepts %s from the pending owner without a Mac-only take", async (stage) => {
+		const { renderer, state, send, request } = setup();
+		state.owner = renderer;
+		request.ready(renderer, true);
+		const result = request.start();
+		request.progress(renderer, send.mock.calls[0][0], stage, { recordingId: 88 });
+		expect(await result).toEqual({ success: true, recordingId: 88 });
+	});
+
+	it("does not fail a portal-owned selection that will continue into native start", async () => {
+		const { renderer, state, send, request } = setup();
+		state.owner = renderer;
+		request.ready(renderer, true);
+		const result = request.start();
+		let settled = false;
+		void result.then(() => {
+			settled = true;
+		});
+		const token = send.mock.calls[0][0];
+		request.progress(renderer, token, "selector-result", {
+			opened: false,
+			portalOwnsSelection: true,
+		});
+		await Promise.resolve();
+		expect(settled).toBe(false);
+		state.running = true;
+		state.recordingId = 9;
+		request.progress(renderer, token, "writer-started", { recordingId: 9 });
+		expect(await result).toEqual({ success: true, recordingId: 9 });
+	});
+
+	it("requires a fresh subscription after a navigation before any Record request", async () => {
+		const { renderer, state, send, request } = setup();
+		state.owner = renderer;
+		request.ready(renderer, true);
+		request.unavailable(renderer);
+		const result = request.start();
+		expect(send).not.toHaveBeenCalled();
+		request.ready(renderer, true);
+		expect(send).toHaveBeenCalledOnce();
+		request.unavailable(renderer);
+		expect(await result).toMatchObject({
+			success: false,
+			error: expect.stringMatching(/closed or reloaded/),
+		});
+	});
 });

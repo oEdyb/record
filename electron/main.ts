@@ -1008,7 +1008,6 @@ app.on("before-quit", (event) => {
 	quitCaptureGuard.beforeQuit(event);
 });
 
-const tracedPillContents = new WeakSet<object>();
 let agentServer: AgentServer | null = null;
 let agentTranscriber: ParakeetProcess | null = null;
 
@@ -1427,14 +1426,6 @@ appReady?.then(async () => {
 					loading: pill?.webContents.isLoading() ?? null,
 					destroyed: pill?.isDestroyed() ?? null,
 				});
-				if (pill && !tracedPillContents.has(pill.webContents)) {
-					tracedPillContents.add(pill.webContents);
-					const traceWindow = (stage: string) =>
-						recordRequestTrace.add(recordRequestTrace.currentToken(), stage, { windowId: pill.id });
-					pill.webContents.on("did-start-navigation", () => traceWindow("navigation"));
-					pill.webContents.on("render-process-gone", () => traceWindow("renderer-exit"));
-					pill.webContents.on("destroyed", () => traceWindow("destroyed"));
-				}
 			}
 			pill?.webContents.send(channel, payload);
 		},

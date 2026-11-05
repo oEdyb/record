@@ -6,8 +6,10 @@ import { StrictMode } from "react";
 import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { usePreviewAudio } from "@/lib/ai-edition/preview/previewAudio";
+import { traceRecordRequest } from "@/lib/recording/recordRequestTrace";
 import type { RecordingSessionClip } from "@/lib/recordingSession";
 import { loadUserPreferences } from "@/lib/userPreferences";
+import { DEFAULT_RECORDING_PREFS } from "../../../electron/recording/recordingPrefsStore";
 import { TooltipProvider } from "../ui/tooltip";
 import { HUD_BAR_BOTTOM, HUD_POPOVER_GAP, HUD_POPOVER_MAX_HEIGHT } from "./hudGeometry";
 import { LaunchWindow } from "./LaunchWindow";
@@ -51,6 +53,7 @@ const recorderState = vi.hoisted(() => ({
 		activeClipElapsedMs: 0,
 		recordedClips: [] as RecordingSessionClip[],
 		toggleRecording: vi.fn(),
+		startRecordingFromRequest: vi.fn(),
 		togglePaused: vi.fn(),
 		selectRecordingSource: vi.fn(async () => ({ success: true })),
 		chooseRecordingSource: vi.fn(async () => ({ success: true })),
@@ -91,9 +94,18 @@ let selectedSourceChangedListeners: SelectedSourceChangedListener[] = [];
 let sourceSelectorClosedListeners: Array<() => void> = [];
 let toggleRecordingPauseListeners: Array<() => void> = [];
 
-vi.mock("../../hooks/useScreenRecorder", () => ({
-	useScreenRecorder: () => recorderState.value,
-}));
+const integrationRecorder = vi.hoisted(() => ({ enabled: false }));
+vi.mock("../../hooks/useScreenRecorder", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../hooks/useScreenRecorder")>();
+	return {
+		useScreenRecorder: () => {
+			const useRecorder = integrationRecorder.enabled
+				? actual.useScreenRecorder
+				: () => recorderState.value;
+			return useRecorder();
+		},
+	};
+});
 
 const micDevicesState = vi.hoisted(() => ({
 	value: [] as Array<{ deviceId: string; label: string; groupId: string }>,
@@ -376,6 +388,7 @@ function resetLaunchMocks() {
 	recorderState.value.microphoneDeviceId = undefined;
 	vi.stubGlobal("ResizeObserver", StubResizeObserver);
 	recorderState.value.toggleRecording.mockClear();
+	recorderState.value.startRecordingFromRequest.mockClear();
 	recorderState.value.softwareEncoderFallbackNoticeVisible = false;
 	recorderState.value.dismissSoftwareEncoderFallbackNotice.mockClear();
 	recorderState.value.recording = false;
@@ -436,6 +449,8 @@ describe("LaunchWindow record button", () => {
 
 	afterEach(() => {
 		cleanup();
+		integrationRecorder.enabled = false;
+		traceRecordRequest("cleanup", { captureStarted: false });
 		vi.unstubAllGlobals();
 	});
 
@@ -502,7 +517,9 @@ describe("LaunchWindow record button", () => {
 		fireEvent.click(await screen.findByTestId("launch-record-button"));
 		fireEvent.click((await screen.findAllByTestId("source-selector-card"))[0]);
 
-		await waitFor(() => expect(recorderState.value.toggleRecording).toHaveBeenCalledTimes(1));
+		await waitFor(() =>
+			expect(recorderState.value.startRecordingFromRequest).toHaveBeenCalledTimes(1),
+		);
 		await waitFor(() => expect(screen.queryByTestId("hud-source-panel")).not.toBeInTheDocument());
 	});
 
@@ -607,7 +624,7 @@ describe("LaunchWindow record button", () => {
 		emitSelectedSourceChanged(displayOneSource);
 
 		await waitFor(() => {
-			expect(recorderState.value.toggleRecording).toHaveBeenCalledTimes(1);
+			expect(recorderState.value.startRecordingFromRequest).toHaveBeenCalledTimes(1);
 		});
 		expect(screen.getByTestId("launch-record-button")).toHaveAttribute("title", "Display 1");
 	});
@@ -763,6 +780,118 @@ describe("LaunchWindow record button", () => {
 		delete (window.electronAPI as Partial<Window["electronAPI"]>).openPrivacySettings;
 	});
 
+	it.each([
+		"darwin",
+		"linux",
+		"win32",
+	])("routes a fresh %s Studio press through the real recording hook without toggling", async (platform) => {
+		platformState.value = platform;
+		integrationRecorder.enabled = true;
+		stubElectronAPI(vi.fn(async () => displayOneSource));
+		window.electronAPI.getRecordingPrefs = vi.fn(async () => ({ ...DEFAULT_RECORDING_PREFS }));
+		window.electronAPI.requestNativeMacCursorAccess = vi.fn(async () => ({
+			success: true,
+			granted: true,
+			status: "granted",
+		}));
+		window.electronAPI.isNativeMacCaptureAvailable = vi.fn(async () => ({
+			success: true,
+			available: true,
+		}));
+		window.electronAPI.isNativeWindowsCaptureAvailable = vi.fn(async () => ({
+			success: true,
+			available: true,
+		}));
+		window.electronAPI.prepareNativeLinuxRecording = vi.fn(async () => ({
+			success: true,
+			recordingId: 31,
+		}));
+		let finishStart: (result: { success: true; recordingId: number }) => void = () => undefined;
+		const pending = new Promise<{ success: true; recordingId: number }>((resolve) => {
+			finishStart = resolve;
+		});
+		const start = vi.fn(() => pending);
+		window.electronAPI.startNativeMacRecording = start;
+		window.electronAPI.startNativeWindowsRecording = start;
+		const progress = vi.fn();
+		window.electronAPI.traceRecordRequest = progress;
+		window.electronAPI.setStudioRecordReady = vi.fn();
+		let record: (token?: number) => void = () => undefined;
+		window.electronAPI.onHudStartRecording = vi.fn((callback) => {
+			record = callback;
+			return () => undefined;
+		});
+		renderLaunchWindow();
+		await waitFor(() => expect(window.electronAPI.setStudioRecordReady).toHaveBeenCalledWith(true));
+		act(() => record(9100));
+		await waitFor(() => expect(start).toHaveBeenCalledOnce());
+		expect(progress.mock.calls.some(([event]) => event.stage.endsWith("writer-started"))).toBe(
+			false,
+		);
+		act(() => record());
+		expect(start).toHaveBeenCalledOnce();
+		await act(async () => finishStart({ success: true, recordingId: 31 }));
+		await waitFor(() =>
+			expect(progress).toHaveBeenCalledWith({
+				token: 9100,
+				stage: platform === "win32" ? "windows-writer-started" : "writer-started",
+				flags: { recordingId: 31 },
+			}),
+		);
+		expect(window.electronAPI.openSourceSelector).not.toHaveBeenCalled();
+		delete (window.electronAPI as Partial<Window["electronAPI"]>).setStudioRecordReady;
+		delete (window.electronAPI as Partial<Window["electronAPI"]>).onHudStartRecording;
+		delete (window.electronAPI as Partial<Window["electronAPI"]>).traceRecordRequest;
+	});
+
+	it("does not advertise a Record listener until the saved source is loaded", async () => {
+		let resolveSource: (source: ProcessedDesktopSource) => void = () => undefined;
+		const pending = new Promise<ProcessedDesktopSource>((resolve) => {
+			resolveSource = resolve;
+		});
+		stubElectronAPI(vi.fn(() => pending));
+		window.electronAPI.setStudioRecordReady = vi.fn();
+		window.electronAPI.onHudStartRecording = vi.fn(() => () => undefined);
+		renderLaunchWindow();
+		await screen.findByTestId("launch-record-button");
+		expect(window.electronAPI.setStudioRecordReady).not.toHaveBeenCalledWith(true);
+		expect(window.electronAPI.onHudStartRecording).not.toHaveBeenCalled();
+		await act(async () => {
+			resolveSource(displayOneSource);
+		});
+		await waitFor(() => expect(window.electronAPI.setStudioRecordReady).toHaveBeenCalledWith(true));
+		delete (window.electronAPI as Partial<Window["electronAPI"]>).setStudioRecordReady;
+		delete (window.electronAPI as Partial<Window["electronAPI"]>).onHudStartRecording;
+	});
+
+	it("waits for portal ownership before advertising a fresh Linux Record listener", async () => {
+		platformState.value = "linux";
+		stubElectronAPI(vi.fn(async () => null));
+		let resolvePortal: (result: { success: true; available: true }) => void = () => undefined;
+		const pending = new Promise<{ success: true; available: true }>((resolve) => {
+			resolvePortal = resolve;
+		});
+		window.electronAPI.isNativeLinuxCaptureAvailable = vi.fn(() => pending);
+		window.electronAPI.setStudioRecordReady = vi.fn();
+		let record: (token?: number) => void = () => undefined;
+		window.electronAPI.onHudStartRecording = vi.fn((callback) => {
+			record = callback;
+			return () => undefined;
+		});
+		renderLaunchWindow();
+		await screen.findByTestId("launch-record-button");
+		expect(window.electronAPI.setStudioRecordReady).not.toHaveBeenCalledWith(true);
+		await act(async () => {
+			resolvePortal({ success: true, available: true });
+		});
+		await waitFor(() => expect(window.electronAPI.setStudioRecordReady).toHaveBeenCalledWith(true));
+		act(() => record());
+		expect(recorderState.value.startRecordingFromRequest).toHaveBeenCalledOnce();
+		expect(window.electronAPI.openSourceSelector).not.toHaveBeenCalled();
+		delete (window.electronAPI as Partial<Window["electronAPI"]>).setStudioRecordReady;
+		delete (window.electronAPI as Partial<Window["electronAPI"]>).onHudStartRecording;
+	});
+
 	it("starts recording from the menu bar item like a Record click", async () => {
 		stubElectronAPI(vi.fn(async () => displayOneSource));
 		let startFromMenu: () => void = () => undefined;
@@ -775,7 +904,8 @@ describe("LaunchWindow record button", () => {
 		await waitFor(() => expect(record).toHaveAttribute("title", "Display 1"));
 
 		act(() => startFromMenu());
-		expect(recorderState.value.toggleRecording).toHaveBeenCalledOnce();
+		expect(recorderState.value.startRecordingFromRequest).toHaveBeenCalledOnce();
+		expect(recorderState.value.toggleRecording).not.toHaveBeenCalled();
 		delete (window.electronAPI as Partial<Window["electronAPI"]>).onHudStartRecording;
 	});
 

@@ -246,6 +246,16 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	getStudioSnapshot: () => {
 		return ipcRenderer.invoke("studio-snapshot");
 	},
+	onStudioRecordResult: (
+		callback: (result: import("./studio/types").StudioRecordResult) => void,
+	) => {
+		const listener = (
+			_event: Electron.IpcRendererEvent,
+			result: import("./studio/types").StudioRecordResult,
+		) => callback(result);
+		ipcRenderer.on("studio-record-result", listener);
+		return () => ipcRenderer.removeListener("studio-record-result", listener);
+	},
 	onStudioUpdated: (callback: (snapshot: unknown) => void) => {
 		const listener = (_event: Electron.IpcRendererEvent, snapshot: unknown) => callback(snapshot);
 		ipcRenderer.on("studio-updated", listener);
@@ -732,14 +742,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		stage: string;
 		flags: Record<string, boolean | number | null>;
 	}) => ipcRenderer.send("record-request-trace", entry),
+	setStudioRecordReady: (ready: boolean) => ipcRenderer.send("studio-record-ready", ready),
 	onHudStartRecording: (callback: (token?: number) => void) => {
 		const listener = (_event: Electron.IpcRendererEvent, token?: number) => callback(token);
 		ipcRenderer.on("hud-start-recording", listener);
-		ipcRenderer.send("studio-record-ready", true);
-		return () => {
-			ipcRenderer.removeListener("hud-start-recording", listener);
-			ipcRenderer.send("studio-record-ready", false);
-		};
+		return () => ipcRenderer.removeListener("hud-start-recording", listener);
 	},
 	onHudToggleRecordingPause: (callback: () => void) => {
 		const listener = () => callback();

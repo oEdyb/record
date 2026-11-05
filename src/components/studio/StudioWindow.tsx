@@ -84,6 +84,17 @@ export function StudioWindow() {
 		const timer = setTimeout(() => setPending(false), COMMAND_TIMEOUT_MS);
 		return () => clearTimeout(timer);
 	}, [pending]);
+	useEffect(
+		() =>
+			window.electronAPI.onStudioRecordResult?.((result) => {
+				if (!result.success) {
+					setPending(false);
+					setResumeAsked(false);
+					toast.error(result.error);
+				}
+			}),
+		[],
+	);
 	const send = useCallback((command: StudioCommand) => {
 		if (command !== "pill" && command !== "open-notes") setPending(true);
 		if (command === "resume" || command === "record") {

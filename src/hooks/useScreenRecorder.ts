@@ -105,6 +105,7 @@ type UseScreenRecorderReturn = {
 	activeClipElapsedMs: number;
 	recordedClips: RecordingSessionClip[];
 	toggleRecording: () => void;
+	startRecordingFromRequest: () => void;
 	/** Starts recording with no countdown overlay. Used by the headless CLI runner. */
 	startRecordingImmediately: () => Promise<void>;
 	togglePaused: () => void;
@@ -1359,6 +1360,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			segmentStartedAt.current = Date.now();
 			allowAutoFinalize.current = true;
 			setRecording(true);
+			traceRecordRequest("windows-writer-started", { recordingId: result.recordingId });
 			setPaused(false);
 			setElapsedSeconds(0);
 			return true;
@@ -1639,13 +1641,30 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	const buildNativeLinuxRequest = (activeRecordingId = Date.now()) =>
 		currentNativeMacRequest({ id: "portal:selected" }, activeRecordingId);
 
+	const hasCaptureWriter = () =>
+		nativeMacRecording.current !== null ||
+		nativeWindowsRecording.current !== null ||
+		screenRecorder.current?.recorder.state === "recording";
+
 	const startRecordCountdown = async () => {
 		traceRecordRequest("hook-entry", {
 			pending: pendingStartRunId.current !== null,
 			recording,
 			sourceSelectionInFlight: sourceSelectionInFlight.current,
+			writerPending:
+				recordingStartPending.current ||
+				nativeMacRecording.current !== null ||
+				nativeWindowsRecording.current !== null ||
+				screenRecorder.current !== null,
 		});
-		if (pendingStartRunId.current !== null || recording || sourceSelectionInFlight.current) return;
+		if (
+			pendingStartRunId.current !== null ||
+			recording ||
+			sourceSelectionInFlight.current ||
+			recordingStartPending.current ||
+			hasCaptureWriter()
+		)
+			return;
 
 		takeUsesSystemCursor.current = false;
 		startMarks.current = [];
@@ -1696,7 +1715,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			if (!isCountdownRunActive(runId)) return;
 
 			await startRecording(runId, preparedRecordingId);
-			captureStarted = nativeMacRecording.current !== null;
+			captureStarted = hasCaptureWriter();
 			if (!isCountdownRunActive(runId)) return;
 			if (window.electronAPI.getPlatform() !== "linux")
 				await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
@@ -1977,6 +1996,13 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				},
 				`${RECORDING_FILE_PREFIX}${activeRecordingId}${VIDEO_FILE_EXTENSION}`,
 			);
+			const browserRecorder = screenRecorder.current.recorder;
+			const confirmBrowserWriter = (event: BlobEvent) => {
+				if (!event.data || event.data.size === 0) return;
+				browserRecorder.removeEventListener("dataavailable", confirmBrowserWriter);
+				traceRecordRequest("browser-writer-started", { recordingId: activeRecordingId });
+			};
+			browserRecorder.addEventListener("dataavailable", confirmBrowserWriter);
 			screenRecorder.current.recorder.addEventListener(
 				"error",
 				() => {
@@ -2580,6 +2606,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		activeClipElapsedMs,
 		recordedClips,
 		toggleRecording,
+		startRecordingFromRequest: () => {
+			void startRecordCountdown();
+		},
 		preferencesReady,
 		startRecordingImmediately: () => startRecording(),
 		togglePaused,

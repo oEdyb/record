@@ -57,6 +57,24 @@ export class RecordRequest {
 		this.dispatch();
 	}
 
+	accepts(sender: object, token: number): boolean {
+		return (
+			this.pending?.token === token && this.pending.owner === sender && this.deps.owner() === sender
+		);
+	}
+
+	unavailable(sender: object) {
+		this.subscribers.delete(sender);
+		if (this.pending?.owner === sender) {
+			recordRequestTrace.add(this.pending.token, "owner-unavailable");
+			this.finish({
+				success: false,
+				error:
+					"Recording controls closed or reloaded before start was confirmed. Reopen Klippt and try again.",
+			});
+		}
+	}
+
 	progress(
 		sender: object,
 		token: number,
@@ -64,23 +82,33 @@ export class RecordRequest {
 		flags: Record<string, boolean | number | null>,
 	) {
 		const pending = this.pending;
-		if (!pending || pending.token !== token || pending.owner !== sender) return;
+		if (!pending || !this.accepts(sender, token)) return;
 		pending.stage = stage;
 		if (stage === "writer-started") {
 			const take = this.deps.take();
 			if (take?.running && take.recordingId !== null && take.recordingId === flags.recordingId)
 				this.finish({ success: true, recordingId: take.recordingId });
+		} else if (stage === "windows-writer-started" || stage === "browser-writer-started") {
+			if (
+				typeof flags.recordingId === "number" &&
+				Number.isSafeInteger(flags.recordingId) &&
+				flags.recordingId > 0
+			)
+				this.finish({ success: true, recordingId: flags.recordingId });
 		} else if (
 			stage === "renderer-guard" ||
 			(stage === "hook-entry" &&
-				(flags.pending || flags.recording || flags.sourceSelectionInFlight))
+				(flags.pending || flags.recording || flags.sourceSelectionInFlight || flags.writerPending))
 		) {
 			this.finish({
 				success: false,
 				error:
 					"The recording controls are busy. Wait for saving or starting to finish, then try again.",
 			});
-		} else if (stage === "selector-result" || stage === "permission-required") {
+		} else if (
+			(stage === "selector-result" && !flags.portalOwnsSelection) ||
+			stage === "permission-required"
+		) {
 			this.finish({
 				success: false,
 				error:
