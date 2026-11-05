@@ -21,7 +21,9 @@ async function enumerateMicrophones(): Promise<{
 	if (inputs.length > 0 && inputs.every((device) => !device.label)) {
 		let probeStream: MediaStream | null = null;
 		try {
-			probeStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+			probeStream = await navigator.mediaDevices.getUserMedia({
+				audio: { autoGainControl: false, echoCancellation: false, noiseSuppression: false },
+			});
 			inputs = await listInputs();
 		} catch {
 			// Permission denied — report devices without labels.

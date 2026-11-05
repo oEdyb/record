@@ -54,7 +54,9 @@ async function resolveMicDeviceId(deviceNameFilter: string | null): Promise<{
 	// Labels require an active permission grant; a short-lived stream unlocks them.
 	let probeStream: MediaStream | null = null;
 	try {
-		probeStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+		probeStream = await navigator.mediaDevices.getUserMedia({
+			audio: { autoGainControl: false, echoCancellation: false, noiseSuppression: false },
+		});
 	} catch {
 		// Enumeration below may still work with empty labels.
 	}
