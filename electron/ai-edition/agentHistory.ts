@@ -4,6 +4,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { gunzip, gzip } from "node:zlib";
 import { z } from "zod";
+import { migrateRawDocumentToCurrent } from "../../src/lib/ai-edition/document/migrate";
 import { type AxcutDocument, documentSchema } from "../../src/lib/ai-edition/schema";
 import type { ProjectTransactionReceipt, ProjectTransactionVersion } from "./projectTransactions";
 
@@ -276,7 +277,9 @@ export class AgentHistoryStore {
 			maxOutputLength: 32 * 1024 * 1024,
 		});
 		return {
-			document: documentSchema.parse(JSON.parse(bytes.toString("utf8"))),
+			document: documentSchema.parse(
+				migrateRawDocumentToCurrent(JSON.parse(bytes.toString("utf8"))),
+			),
 			targetIds,
 			stateRevision: restoresBefore(target)
 				? target.beforeStateRevision

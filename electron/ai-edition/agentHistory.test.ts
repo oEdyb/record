@@ -1,8 +1,10 @@
 // @vitest-environment node
+
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
 import { type AgentHistoryIntent, AgentHistoryStore } from "./agentHistory";
 import { DocumentService } from "./document-service";
@@ -71,6 +73,18 @@ async function setup() {
 	};
 }
 describe("durable agent history", () => {
+	it("migrates a retained old-schema snapshot before undo", async () => {
+		const s = await setup();
+		await s.edit("Changed");
+		const [entry] = await new AgentHistoryStore(s.file).list();
+		const file = path.join(`${s.file}.history`, entry.snapshotPath);
+		const raw = JSON.parse(gunzipSync(await fs.readFile(file)).toString("utf8"));
+		raw.schemaVersion = 7;
+		await fs.writeFile(file, gzipSync(JSON.stringify(raw)));
+		await s.restore("undo");
+		expect(await s.title()).toBe("Initial");
+	});
+
 	it("restores a retained undo entry's before-document with --to and can redo it", async () => {
 		const s = await setup();
 		await s.edit("A");
