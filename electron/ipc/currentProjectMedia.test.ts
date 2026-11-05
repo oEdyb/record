@@ -86,7 +86,7 @@ it("keeps screen approval when optional audio cannot be granted", async () => {
 	const approveAudio = vi.fn(async () => {
 		throw new Error("Audio outside trusted folder");
 	});
-	const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+	const warning = vi.spyOn(console, "warn").mockReturnValue(undefined);
 	try {
 		const result = await approveCurrentProjectMedia(
 			document,
