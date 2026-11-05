@@ -14,6 +14,7 @@ import {
 } from "@/lib/compositeLayout";
 import { normalizeCursorThemeId } from "@/lib/cursor/cursorThemes";
 import type { ExportFormat, ExportQuality, GifFrameRate, GifSizePreset } from "@/lib/exporter";
+import { fromLegacyFileUrl } from "@/lib/legacyFileUrl";
 import { fromKlipptMediaUrl, toKlipptMediaUrl } from "@/lib/localMediaUrl";
 import type { ProjectMedia } from "@/lib/recordingSession";
 import { normalizeProjectMedia } from "@/lib/recordingSession";
@@ -165,47 +166,8 @@ export function toFileUrl(filePath: string): string {
 	return toKlipptMediaUrl(fromFileUrl(filePath));
 }
 
-/** A literal `%` in a saved path is not an escape; keep it instead of throwing. */
-function decodeFilePath(encodedPath: string): string {
-	try {
-		return decodeURIComponent(encodedPath);
-	} catch {
-		return encodedPath.replace(/(?:%[0-9a-fA-F]{2})+/g, (escaped) => {
-			try {
-				return decodeURIComponent(escaped);
-			} catch {
-				return escaped;
-			}
-		});
-	}
-}
-
 function fromFileUrl(fileUrl: string): string {
-	const protocolPath = fromKlipptMediaUrl(fileUrl);
-	if (protocolPath !== null) {
-		return protocolPath;
-	}
-	if (!fileUrl.startsWith("file://")) {
-		return fileUrl;
-	}
-
-	try {
-		const url = new URL(fileUrl);
-		const pathname = decodeFilePath(url.pathname);
-
-		if (url.host && url.host !== "localhost") {
-			return `//${url.host}${pathname}`;
-		}
-
-		if (/^\/[a-zA-Z]:/.test(pathname)) {
-			return pathname.slice(1);
-		}
-
-		return pathname;
-	} catch {
-		const fallbackPath = decodeFilePath(fileUrl.replace(/^file:\/\//, ""));
-		return fallbackPath.replace(/^\/([a-zA-Z]:)/, "$1");
-	}
+	return fromKlipptMediaUrl(fileUrl) ?? fromLegacyFileUrl(fileUrl);
 }
 
 export function validateProjectData(candidate: unknown): candidate is EditorProjectData {
