@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { readFile, realpath, writeFile } from "node:fs/promises";
@@ -38,7 +38,7 @@ async function kwinWindow(title, action, pid, directory, attempt = 0) {
 			return await kwinWindow(title, action, pid, directory, attempt + 1);
 		}
 		for (let i = 0; i < 40; i++) {
-			const log = execFileSync(
+			const journal = spawnSync(
 				"journalctl",
 				[
 					"--user",
@@ -46,13 +46,19 @@ async function kwinWindow(title, action, pid, directory, attempt = 0) {
 					`agent-lab-${path.basename(process.env.AGENT_LAB_RUNTIME)}.service`,
 					"-n",
 					"100",
+					"--grep",
+					`^${tag} `,
 					"--no-pager",
 					"-o",
 					"json",
 				],
 				{ encoding: "utf8" },
 			);
-			const message = log
+			if (journal.error) throw journal.error;
+			// journalctl returns 1 when the requested tag has not arrived yet.
+			if (journal.status !== 0 && !(journal.status === 1 && !journal.stdout && !journal.stderr))
+				throw new Error(`Private KWin journal failed: ${journal.stderr}`);
+			const message = journal.stdout
 				.split("\n")
 				.filter(Boolean)
 				.map((line) => JSON.parse(line).MESSAGE)
@@ -65,7 +71,11 @@ async function kwinWindow(title, action, pid, directory, attempt = 0) {
 			}
 			await delay(50);
 		}
-		throw new Error("Private compositor did not report window state");
+		if (attempt < 4) {
+			console.warn(`Private KWin reply missing; retrying ${title} ${action} (${attempt + 1}/4)`);
+			return await kwinWindow(title, action, pid, directory, attempt + 1);
+		}
+		throw new Error("Private compositor did not report window state after five requests");
 	} finally {
 		dbus(["/Scripting", "unloadScript", tag]);
 	}
