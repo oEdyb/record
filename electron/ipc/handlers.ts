@@ -3,7 +3,6 @@ import { constants as fsConstants, realpathSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import type { DesktopCapturerSource } from "electron";
 import {
 	app,
@@ -19,6 +18,7 @@ import {
 	systemPreferences,
 } from "electron";
 import { APP_DISPLAY_NAME } from "../../src/lib/brand";
+import { fromLegacyFileUrl } from "../../src/lib/legacyFileUrl";
 import {
 	fromKlipptMediaUrl,
 	KLIPPT_APP_ORIGIN,
@@ -887,7 +887,7 @@ function normalizeVideoSourcePath(videoPath?: string | null): string | null {
 
 	if (/^file:\/\//i.test(trimmed)) {
 		try {
-			return fileURLToPath(trimmed);
+			return fromLegacyFileUrl(trimmed);
 		} catch {
 			// Fall through and keep best-effort string path below.
 		}
@@ -1338,6 +1338,8 @@ async function registerRecordingMediaLinks(
 	screenVideoPath: string,
 	options: {
 		webcamVideoPath?: string;
+		microphoneAudioPath?: string;
+		systemAudioPath?: string;
 		webcamOffsetMs?: number;
 		cursorCaptureMode?: CursorCaptureMode;
 	},
@@ -1349,6 +1351,8 @@ async function registerRecordingMediaLinks(
 			.then(() => true)
 			.catch(() => false);
 		await registerMediaLinks(RECORDINGS_DIR, screenVideoPath, {
+			...(options.microphoneAudioPath ? { microphoneAudioPath: options.microphoneAudioPath } : {}),
+			...(options.systemAudioPath ? { systemAudioPath: options.systemAudioPath } : {}),
 			...(options.webcamVideoPath ? { webcamVideoPath: options.webcamVideoPath } : {}),
 			...(options.webcamVideoPath && Number.isFinite(options.webcamOffsetMs)
 				? { webcamOffsetMs: options.webcamOffsetMs }
@@ -3111,8 +3115,8 @@ export function registerIpcHandlers(
 			shiftPendingCursorTelemetry(offsetMs);
 			await writePendingCursorTelemetryForClips(clips);
 		},
-		registerMediaLinks: async (screenVideoPath, cursorCaptureMode) => {
-			await registerRecordingMediaLinks(screenVideoPath, { cursorCaptureMode });
+		registerMediaLinks: async (screenVideoPath, cursorCaptureMode, clip) => {
+			await registerRecordingMediaLinks(screenVideoPath, { ...clip, cursorCaptureMode });
 		},
 		onSessionStored: (session) => {
 			setCurrentRecordingSessionState(session);

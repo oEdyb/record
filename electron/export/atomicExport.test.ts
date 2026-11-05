@@ -192,6 +192,39 @@ describe("AtomicExportPublisher", () => {
 		expect(await readFile(finalPath, "utf8")).toBe("old export");
 	});
 
+	it("explains an actual FFmpeg disk-full message after preflight", async () => {
+		await expect(
+			publisher().publish({
+				finalPath: path.join(directory, "full.mp4"),
+				expectedBytes: 1,
+				render: async () => {
+					throw new Error("Error submitting a packet to the muxer: No space left on device");
+				},
+				verify: async () => undefined,
+			}),
+		).rejects.toMatchObject({
+			code: "INSUFFICIENT_SPACE",
+			retryable: true,
+			message: "Not enough free space to finish this export safely.",
+		});
+	});
+	it("explains a read-only destination instead of exposing EROFS", async () => {
+		await expect(
+			publisher().publish({
+				finalPath: path.join(directory, "readonly.mp4"),
+				expectedBytes: 1,
+				render: async () => {
+					throw Object.assign(new Error("EROFS: read-only file system, open staging.mp4"), {
+						code: "EROFS",
+					});
+				},
+				verify: async () => undefined,
+			}),
+		).rejects.toMatchObject({
+			message: "This destination is read-only. Choose a writable folder.",
+		});
+	});
+
 	it("does not start rendering when already cancelled", async () => {
 		const controller = new AbortController();
 		controller.abort();

@@ -32,6 +32,8 @@ export class AiEditionService {
 			...view.document.assets.flatMap((asset) => [
 				asset.originalPath,
 				asset.cameraTrack?.sourcePath,
+				asset.microphoneAudioPath,
+				asset.systemAudioPath,
 			]),
 			...(view.document.audioAssets ?? []).map((asset) => asset.originalPath),
 		]);

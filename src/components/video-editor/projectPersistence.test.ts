@@ -14,6 +14,8 @@ import {
 
 describe("file URLs with a literal percent sign", () => {
 	it.each([
+		["file:///clips/part#1?camera.mp4", "/clips/part#1?camera.mp4"],
+		["file:///clips/part%231%3Fcamera.mp4", "/clips/part#1?camera.mp4"],
 		["file:///clips/100%.mp4", "/clips/100%.mp4"],
 		["file:///clips/100%25.mp4", "/clips/100%.mp4"],
 		["file:///clips/caf%C3%A9%20100%.mp4", "/clips/café 100%.mp4"],

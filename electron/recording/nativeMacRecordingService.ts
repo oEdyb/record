@@ -63,6 +63,7 @@ export type NativeMacCaptureHelper = Pick<
 		Pick<
 			NativeMacHelperClient,
 			| "firstFrameStartedAtMs"
+			| "clipStartedAtMs"
 			| "negotiatedCursorCaptureMode"
 			| "waitForSourceSelected"
 			| "arm"
@@ -103,6 +104,7 @@ export type NativeMacRecordingServiceDependencies = {
 	registerMediaLinks: (
 		screenVideoPath: string,
 		cursorCaptureMode: CursorCaptureMode,
+		clip?: RecordingSessionClip,
 	) => Promise<void>;
 	onSessionStored: (session: RecordingSession) => void;
 	onRecordingStateChange: (recording: boolean) => void;
@@ -663,7 +665,11 @@ export class NativeMacRecordingService {
 				this.clipCursorModes.set(clipIndex, this.cursorCaptureMode);
 				this.storage.rearm();
 				await this.persistRecoverySession();
-				return { success: true, clipIndex };
+				return {
+					success: true,
+					clipIndex,
+					...(helper.clipStartedAtMs !== undefined ? { startedAtMs: helper.clipStartedAtMs } : {}),
+				};
 			} catch (error) {
 				const rejectedIndex =
 					error instanceof NativeMacResumeRejectedError ? error.clipIndex : null;
@@ -941,6 +947,7 @@ export class NativeMacRecordingService {
 						this.deps.registerMediaLinks(
 							clip.screenVideoPath,
 							clip.cursorCaptureMode ?? cursorCaptureMode,
+							clip,
 						),
 					),
 				);

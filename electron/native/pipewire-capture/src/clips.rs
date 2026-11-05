@@ -248,16 +248,21 @@ impl Clips {
         }
         if !self.announced && writer.ready() {
             let bounds = self.bounds.clone().ok_or("capture bounds missing")?;
+            let started_at_ms = timestamp_ms().saturating_sub(writer.elapsed().as_millis() as u64);
             if !self.ever_started {
                 emitter
                     .emit(&Event::RecordingStarted {
+                        started_at_ms,
                         capture_bounds: bounds.clone(),
                     })
                     .map_err(|error| error.to_string())?;
             }
             if self.resuming {
                 emitter
-                    .emit(&Event::RecordingResumed { clip_index: index })
+                    .emit(&Event::RecordingResumed {
+                        clip_index: index,
+                        started_at_ms,
+                    })
                     .map_err(|error| error.to_string())?;
             }
             // Keep the old outputPath protocol usable as well.

@@ -39,6 +39,8 @@ interface MediaLinkEntry {
 	lastKnownPath: string;
 	fingerprint: MediaFingerprint;
 	webcamVideoPath?: string;
+	microphoneAudioPath?: string;
+	systemAudioPath?: string;
 	webcamOffsetMs?: number;
 	cursorTelemetryPath?: string;
 	cursorCaptureMode?: CursorCaptureMode;
@@ -115,6 +117,10 @@ function normalizeEntry(candidate: unknown): MediaLinkEntry | null {
 			tailSampleBase64: fp.tailSampleBase64,
 		},
 		...(typeof raw.webcamVideoPath === "string" ? { webcamVideoPath: raw.webcamVideoPath } : {}),
+		...(typeof raw.microphoneAudioPath === "string"
+			? { microphoneAudioPath: raw.microphoneAudioPath }
+			: {}),
+		...(typeof raw.systemAudioPath === "string" ? { systemAudioPath: raw.systemAudioPath } : {}),
 		...(typeof raw.webcamOffsetMs === "number" ? { webcamOffsetMs: raw.webcamOffsetMs } : {}),
 		...(typeof raw.cursorTelemetryPath === "string"
 			? { cursorTelemetryPath: raw.cursorTelemetryPath }
@@ -219,6 +225,8 @@ async function updateRegistry(
 
 export interface MediaLinksToRegister {
 	webcamVideoPath?: string;
+	microphoneAudioPath?: string;
+	systemAudioPath?: string;
 	webcamOffsetMs?: number;
 	cursorTelemetryPath?: string;
 	cursorCaptureMode?: CursorCaptureMode;
@@ -235,7 +243,13 @@ export async function registerMediaLinks(
 	videoPath: string,
 	links: MediaLinksToRegister,
 ): Promise<void> {
-	if (!links.webcamVideoPath && !links.cursorTelemetryPath) return;
+	if (
+		!links.webcamVideoPath &&
+		!links.cursorTelemetryPath &&
+		!links.microphoneAudioPath &&
+		!links.systemAudioPath
+	)
+		return;
 	const fingerprint = await computeFingerprint(videoPath);
 	await updateRegistry(baseDir, (file) => {
 		const existingIndex = file.entries.findIndex((e) =>
@@ -257,6 +271,8 @@ export async function registerMediaLinks(
 
 export interface MediaLinksLookup {
 	webcamVideoPath?: string;
+	microphoneAudioPath?: string;
+	systemAudioPath?: string;
 	webcamOffsetMs?: number;
 	cursorTelemetryPath?: string;
 	cursorCaptureMode?: CursorCaptureMode;
@@ -346,6 +362,8 @@ export async function findRelocatedMediaByStoredPath(
 	return {
 		screenVideoPath: match.lastKnownPath,
 		...(match.webcamVideoPath ? { webcamVideoPath: match.webcamVideoPath } : {}),
+		...(match.microphoneAudioPath ? { microphoneAudioPath: match.microphoneAudioPath } : {}),
+		...(match.systemAudioPath ? { systemAudioPath: match.systemAudioPath } : {}),
 		...(typeof match.webcamOffsetMs === "number" ? { webcamOffsetMs: match.webcamOffsetMs } : {}),
 		...(match.cursorTelemetryPath ? { cursorTelemetryPath: match.cursorTelemetryPath } : {}),
 		...(match.cursorCaptureMode ? { cursorCaptureMode: match.cursorCaptureMode } : {}),
@@ -390,6 +408,8 @@ export async function findMediaLinksByFingerprint(
 
 	return {
 		...(match.webcamVideoPath ? { webcamVideoPath: match.webcamVideoPath } : {}),
+		...(match.microphoneAudioPath ? { microphoneAudioPath: match.microphoneAudioPath } : {}),
+		...(match.systemAudioPath ? { systemAudioPath: match.systemAudioPath } : {}),
 		...(typeof match.webcamOffsetMs === "number" ? { webcamOffsetMs: match.webcamOffsetMs } : {}),
 		...(match.cursorTelemetryPath ? { cursorTelemetryPath: match.cursorTelemetryPath } : {}),
 		...(match.cursorCaptureMode ? { cursorCaptureMode: match.cursorCaptureMode } : {}),

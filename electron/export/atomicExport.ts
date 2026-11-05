@@ -260,12 +260,25 @@ function wrapPhaseError(
 	if (error instanceof ExportTransactionError) return error;
 	const cause = asError(error);
 	const filesystemCode = (error as NodeJS.ErrnoException | undefined)?.code;
-	if (filesystemCode === "ENOSPC" || filesystemCode === "EDQUOT") {
+	if (
+		filesystemCode === "ENOSPC" ||
+		filesystemCode === "EDQUOT" ||
+		/(?:^|[:(])\s*(?:No space left on device|Disk quota exceeded)(?:[).\s]|$)/i.test(cause.message)
+	) {
 		return new ExportTransactionError(
 			"Not enough free space to finish this export safely.",
 			phase,
 			"INSUFFICIENT_SPACE",
 			true,
+			cause,
+		);
+	}
+	if (filesystemCode === "EROFS") {
+		return new ExportTransactionError(
+			"This destination is read-only. Choose a writable folder.",
+			phase,
+			code,
+			false,
 			cause,
 		);
 	}

@@ -692,3 +692,23 @@ fn rejecting_a_source_replacement_keeps_the_current_paused_frame() {
     assert_eq!(clips.completed.len(), 2);
     assert_video(&clips.completed[1].screen_video_path);
 }
+
+#[test]
+fn ready_event_reports_screen_epoch_before_encoder_ack() {
+    let fixture = Fixture::new();
+    let mut clips = Clips::new(fixture.request(), Vec::new(), Some(Backend::Software));
+    let mut bytes = Vec::new();
+    let mut emitter = Emitter::new(&mut bytes, false);
+    clips.connected();
+    clips.latest = Some(frame());
+    clips.stage_latest(&mut emitter).expect("stage");
+    std::thread::sleep(Duration::from_millis(80));
+    clips.advance(&mut emitter).expect("encode");
+    clips.stop(&mut emitter).expect("stop");
+    let events = values(&bytes);
+    let start = events
+        .iter()
+        .find(|v| v["event"] == "recording-started")
+        .expect("start");
+    assert!(start["timestampMs"].as_u64().unwrap() - start["startedAtMs"].as_u64().unwrap() >= 70);
+}

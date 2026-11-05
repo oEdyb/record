@@ -277,6 +277,7 @@ interface Window {
 		) => Promise<{
 			success: boolean;
 			clipIndex?: number;
+			startedAtMs?: number;
 			paused?: boolean;
 			error?: string;
 		}>;

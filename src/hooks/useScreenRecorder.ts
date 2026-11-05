@@ -2252,8 +2252,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 						activeNativeMacRecording.webcamOffsetMs = 0;
 						activeNativeMacRecording.currentClipIndex = authoritativeClipIndex;
 						activeNativeMacRecording.paused = false;
-						segmentStartedAt.current = Date.now();
-						activeClipStartedAt.current = Date.now();
+						segmentStartedAt.current = result.startedAtMs ?? Date.now();
+						activeClipStartedAt.current = segmentStartedAt.current;
 						if (window.electronAPI.getPlatform() === "linux") {
 							try {
 								webcamRecorder.current = startNativeClipWebcam(

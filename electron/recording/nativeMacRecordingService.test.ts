@@ -34,6 +34,7 @@ vi.mock("../export/sourceHandoffMedia", () => ({ inspectHandoffSourceMedia: vi.f
 class FakeHelper implements NativeMacCaptureHelper {
 	captureBounds = null;
 	firstFrameStartedAtMs: number | undefined;
+	clipStartedAtMs: number | undefined;
 	negotiatedCursorCaptureMode: CursorCaptureMode | undefined;
 	output = "";
 	running = true;
@@ -141,7 +142,11 @@ describe("NativeMacRecordingService", () => {
 		]);
 		expect(deps.stopCursor).toHaveBeenCalledOnce();
 		expect(deps.finalizeCursor).toHaveBeenCalledOnce();
-		expect(deps.registerMediaLinks).toHaveBeenCalledWith(clip.screenVideoPath, "editable-overlay");
+		expect(deps.registerMediaLinks).toHaveBeenCalledWith(
+			clip.screenVideoPath,
+			"editable-overlay",
+			expect.objectContaining(clip),
+		);
 	});
 
 	it("keeps a Mac system-cursor take unchanged by Linux fallback metadata", async () => {
@@ -850,6 +855,23 @@ describe("NativeMacRecordingService", () => {
 				message: expect.stringContaining("SIGKILL"),
 			}),
 		);
+	});
+
+	it("returns the resumed screen epoch before recovery persistence finishes", async () => {
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		helper.pauseResult = Promise.resolve({
+			index: 0,
+			screenVideoPath: path.join(recordingsDir, "recording-100-clip-0001.mp4"),
+			durationMs: 500,
+		});
+		await service.pause();
+		helper.clipStartedAtMs = 90;
+		await expect(service.resume()).resolves.toMatchObject({
+			success: true,
+			clipIndex: 1,
+			startedAtMs: 90,
+		});
 	});
 
 	it("journals a new Continue original before the resumed event supplies its clip index", async () => {
