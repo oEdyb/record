@@ -12,7 +12,7 @@ it("opens the actual legacy file whose name contains URL delimiters", async () =
 	expect(
 		await readFile(
 			fromLegacyFileUrl(
-				new URL(`file://${file.replaceAll("#", "%23").replaceAll("?", "%3F")}`).href,
+				new URL(`file://${file.split("#").join("%23").split("?").join("%3F")}`).href,
 			),
 			"utf8",
 		),
