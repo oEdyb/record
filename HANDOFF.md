@@ -1,3 +1,8 @@
+Mac Record delivery: missing/loading owner reproduced; writer-confirmed requests now
+create the owner and wait for loaded controls. Signed real-window and CLI evidence,
+review fixes and limits: [Record delivery investigation](docs/studio-record-drop-investigation.md).
+Sync fix already exists on main as `291af252c` and `6b09a4fb5`; no duplicate patch.
+
 Recording window regressions and private desktop test gates: [recording windows](docs/recording-window-regressions.md).
 
 Review handoff patch: canvas readiness now requires the current take's composed screen,

@@ -1,5 +1,8 @@
 # Studio Record drop investigation
 
+The initial investigation below is historical. Runtime reproduction and the
+implemented fix are recorded under “Mac implementation” and the later checkpoints.
+
 Investigated source `6b09a4fb5`. No installed application was driven and no
 application-support data was accessed or changed. The observed intermittent drop
 was not reproduced. **The cause of those two drops remains unproven.** No behavior
@@ -287,3 +290,48 @@ running now. It was launched by that earlier agent, not a new user launch.
 Fresh state inspection is idle, recording ID null and zero clips; Mac input has
 been idle over 40 minutes. That agent-launched idle copy may be closed for the
 already-authorized installation without stopping a user-started process.
+
+## Final signed Mac window check
+
+Signed source `22945e235` passed the real Studio/CLI workflow on November 5.
+CLI Record after Finish created the missing owner and reached its writer in
+927 ms. Immediate Studio-open plus actual Record click reached its writer in
+868 ms. Four further New recording → Studio → Record starts took 540–592 ms.
+The initial all-source start took 724 ms. Duplicate Record returned CLI exit 1
+and left the active take unchanged.
+
+Screen, camera, microphone and system audio were enabled. Pause/Continue and
+Pause immediately followed by Stop committed two clips, the first 467 ms.
+Review playback advanced with decoded screen 3420×2214 and camera 1920×1080
+frames. All 32 separate originals from the seven takes fully decoded with the
+rebuilt bundled ffprobe/FFmpeg. The intentionally closed native source returned
+CLI exit 1 while retaining the previous review; a subsequent actual Studio
+Record press displayed the failure toast. No successful reply was returned for
+either failed start. Screenshots were inspected.
+
+A final-test harness initially used synchronous child-process CLI calls while
+Playwright was attached. That blocked Playwright's new-target handling and held
+the fresh renderer until the 30-second request timed out. The same flow with an
+asynchronous real CLI passes. Read-only inspection found all three renderer
+readiness gates true after the block ended; the diagnostic ring correctly showed
+no subscription during the block. No production timing workaround was added.
+
+One earlier two-instance test had a native Continue failure after a 132 ms first
+clip with empty late camera/microphone sources. Ten repeated single-instance
+112–133 ms Pause/Continue cases subsequently passed with no native error. This
+does not establish the cause of that native failure. Physical spoken sync,
+Windows/Linux hardware starts and the narrow reload gap remain unproven.
+The existing 618-second Mac sync evidence and the already-merged Linux clock
+fix are separate from these short Record-delivery checks.
+
+Private evidence: `artifacts/mac-record-sync-20261105/async-cli-flow.json`,
+`async-cli-review.png`, `async-cli-failure.png`, and `single-copy-fast-pause.json`.
+
+Final integration checks after including main `b403fd7d2`: full unit suite
+3,438 passed, 6 known dependency-approval-signature failures, 5 skipped (exit 1).
+No additional failure. Both TypeScript checks pass. Lint checks 969 files with
+one existing oversized inventory warning; i18n passes 12 locales/6 namespaces;
+docs checks 28 files. Private Linux desktop tests did not run on this Mac.
+The two test-only compatibility corrections preserve the existing assertions:
+use a checked session literal with definite clips, and replace `replaceAll` with
+literal split/join for the configured TypeScript library.
