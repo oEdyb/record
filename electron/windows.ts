@@ -187,7 +187,8 @@ ipcMain.on("hud-overlay-set-direction-exclusion-rects", (event, rectangles: unkn
 	if (width !== size.width || height !== size.height) {
 		// Wayland owns global position. Resizing from local content must not run
 		// the screen-coordinate pill clamping used by macOS and Windows.
-		hudOverlayWindow.setSize(size.width, size.height);
+		// Keep fixed Wayland constraints in sync so a native restore can shrink again.
+		hudOverlayWindow.setBounds({ ...hudOverlayWindow.getBounds(), ...size }, false);
 	}
 });
 
