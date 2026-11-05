@@ -1,5 +1,6 @@
 import type { RecordingSessionClip } from "../../src/lib/recordingSession";
 import type { TranscriptSnapshot } from "../transcript/liveTranscript";
+import { RecordRequest } from "./recordRequest";
 import {
 	IDLE_PILL_STATE,
 	type StudioCommand,
@@ -97,8 +98,33 @@ export class StudioController {
 	private handoff = 0;
 	private finishTimer: ReturnType<typeof setTimeout> | undefined;
 	private readonly fade: WindowFade;
+	private readonly recordRequest: RecordRequest;
 	constructor(private readonly deps: StudioControllerDeps) {
 		this.fade = new WindowFade(() => Boolean(deps.motionEnabled?.()));
+		this.recordRequest = new RecordRequest({
+			owner: () => this.deps.getPill()?.webContents ?? null,
+			ensure: () => this.deps.ensurePill?.(),
+			send: (token) => {
+				this.review = null;
+				this.deps.sendToPill("hud-start-recording", token);
+			},
+			take: this.deps.take,
+		});
+	}
+
+	requestRecord() {
+		return this.recordRequest.start();
+	}
+	recordReady(sender: object, ready: boolean) {
+		this.recordRequest.ready(sender, ready);
+	}
+	recordProgress(
+		sender: object,
+		token: number,
+		stage: string,
+		flags: Record<string, boolean | number | null>,
+	) {
+		this.recordRequest.progress(sender, token, stage, flags);
 	}
 
 	snapshot(): StudioSnapshot {
@@ -212,9 +238,7 @@ export class StudioController {
 		if (command === "finish" || (command === "pill" && this.reviewing())) return this.finish();
 		if (command === "pill") return this.backToPill();
 		if (command === "record") {
-			if (take?.running) return;
-			this.review = null;
-			this.deps.sendToPill("hud-start-recording");
+			void this.requestRecord();
 			return;
 		}
 		if (command === "record-more") return;

@@ -95,7 +95,9 @@ interface Window {
 		getReviewHandoffToken?: () => Promise<number | null>;
 		reviewReady?: (token: number) => void;
 		onReviewHandoff?: (callback: (token: number) => void) => () => void;
-		studioCommand: (command: import("./studio/types").StudioCommand) => void;
+		studioCommand: (
+			command: import("./studio/types").StudioCommand,
+		) => void | Promise<import("./studio/types").StudioRecordResult>;
 		studioPillNeedsUser: () => void;
 		studioPillNotice?: (active: boolean) => void;
 		reportStudioPillState: (state: import("./studio/types").StudioPillState) => void;
@@ -584,7 +586,12 @@ interface Window {
 			shortcuts: import("../src/lib/shortcuts").ShortcutsConfig,
 		) => Promise<{ success: boolean }>;
 		/** The menu bar item's Start Recording: the HUD records as if its button was pressed. */
-		onHudStartRecording?: (callback: () => void) => () => void;
+		traceRecordRequest?: (entry: {
+			token: number;
+			stage: string;
+			flags: Record<string, boolean | number | null>;
+		}) => void;
+		onHudStartRecording?: (callback: (token?: number) => void) => () => void;
 		onHudToggleRecordingPause: (callback: () => void) => () => void;
 		writeClipboardText: (text: string) => Promise<void>;
 		hudOverlayHide: () => void;

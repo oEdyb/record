@@ -51,7 +51,7 @@ afterEach(() => {
 
 let studioOpened = 0;
 const studioCommands: unknown[] = [];
-async function start(review: boolean) {
+async function start(review: boolean, recordResult?: import("../studio/types").StudioRecordResult) {
 	const dir = await mkdtemp(path.join(tmpdir(), "klippt-agent-test-"));
 	const socketPath = path.join(dir, "agent.sock");
 	const server: AgentServer = new AgentServer({
@@ -68,7 +68,7 @@ async function start(review: boolean) {
 		studioCommand: (command) => {
 			if (command !== "record") return false;
 			studioCommands.push(command);
-			return true;
+			return recordResult ? Promise.resolve(recordResult) : true;
 		},
 		version: "1.2.3",
 	});
@@ -139,6 +139,23 @@ describe("AgentServer", () => {
 		const refused = await ask(socketPath, "studio.command", { command: "explode" });
 		expect(refused.error).toMatch(/Unknown Studio command/);
 		expect(studioCommands).toEqual(["record"]);
+	});
+
+	it("returns a writer-confirmed Record result instead of sent", async () => {
+		const socketPath = await start(false, { success: true, recordingId: 42 });
+		expect((await ask(socketPath, "studio.command", { command: "record" })).result).toEqual({
+			success: true,
+			recordingId: 42,
+		});
+	});
+	it("reports a failed Record request as a socket error", async () => {
+		const socketPath = await start(false, {
+			success: false,
+			error: "Recording controls are busy.",
+		});
+		const reply = await ask(socketPath, "studio.command", { command: "record" });
+		expect(reply.error).toBe("Recording controls are busy.");
+		expect(reply.result).toBeUndefined();
 	});
 
 	it("forwards review methods to the review window and relays its answer", async () => {

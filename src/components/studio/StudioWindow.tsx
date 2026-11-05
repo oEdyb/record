@@ -1,4 +1,5 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { InspectorSwitch } from "@/components/ui/inspector";
 import { useScopedT } from "@/contexts/I18nContext";
 import { applyTheme } from "@/hooks/useTheme";
@@ -89,7 +90,19 @@ export function StudioWindow() {
 			setResumeAsked(true);
 			setSeekRequest(null);
 		}
-		window.electronAPI.studioCommand(command);
+		void Promise.resolve(window.electronAPI.studioCommand(command))
+			.then((result) => {
+				if (result && !result.success) {
+					setPending(false);
+					setResumeAsked(false);
+					toast.error(result.error);
+				}
+			})
+			.catch(() => {
+				setPending(false);
+				setResumeAsked(false);
+				toast.error("Recording controls did not respond. Reopen Klippt and try again.");
+			});
 	}, []);
 	const seek = (takeSec: number, play = false) =>
 		setSeekRequest({

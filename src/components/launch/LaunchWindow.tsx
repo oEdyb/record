@@ -4,6 +4,7 @@ import { flushSync } from "react-dom";
 import { toast } from "sonner";
 import { useI18n, useScopedT } from "@/contexts/I18nContext";
 import { getAvailableLocales, getLocaleName } from "@/i18n/loader";
+import { receiveRecordRequest, traceRecordRequest } from "@/lib/recording/recordRequestTrace";
 import type { RecordingSessionClip } from "@/lib/recordingSession";
 import { loadUserPreferences, saveUserPreferences } from "@/lib/userPreferences";
 import { nativeBridgeClient } from "@/native";
@@ -595,6 +596,7 @@ export function LaunchWindow() {
 				action();
 				return;
 			}
+			traceRecordRequest("permission-required");
 			openPermissionPanel(permissions, action);
 		},
 		[openPermissionPanel],
@@ -1189,10 +1191,13 @@ export function LaunchWindow() {
 			// it to select, and waiting for a selection that can never arrive left
 			// the record button opening a modal instead of recording.
 			const sourceSelected = portalOwnsSource || (sourceSelectedOverride ?? hasSelectedSource);
+			traceRecordRequest("route", { sourceSelected, recording, saving });
 			if (!sourceSelected && !recording) {
 				recordAfterSourceSelectionRef.current = true;
+				window.electronAPI?.studioPillNeedsUser?.();
 				void openSourceSelector()
 					.then((result) => {
+						traceRecordRequest("selector-result", { opened: result.opened });
 						if (result.opened) {
 							return;
 						}
@@ -1209,6 +1214,7 @@ export function LaunchWindow() {
 						}
 					})
 					.catch(() => {
+						traceRecordRequest("selector-rejected");
 						recordAfterSourceSelectionRef.current = false;
 					});
 				return;
@@ -1321,11 +1327,16 @@ export function LaunchWindow() {
 	]);
 
 	useEffect(() => {
-		return window.electronAPI?.onHudStartRecording?.(() => {
-			if (recording || starting || saving) return;
+		return window.electronAPI?.onHudStartRecording?.((token) => {
+			receiveRecordRequest(token);
+			traceRecordRequest("receipt", { recording, starting, saving, hasSelectedSource });
+			if (recording || starting || saving) {
+				traceRecordRequest("renderer-guard", { recording, starting, saving });
+				return;
+			}
 			handleRecordButtonClick();
 		});
-	}, [handleRecordButtonClick, recording, saving, starting]);
+	}, [handleRecordButtonClick, hasSelectedSource, recording, saving, starting]);
 
 	// The Studio's Remove button: the same predicate as the pill's own.
 	useEffect(() => {

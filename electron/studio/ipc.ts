@@ -1,5 +1,6 @@
 import { normalizeRecordingQuality } from "../../src/lib/recording/recordingQuality";
 import type { RendererIpcMain } from "../ipc/trustedRendererIpc";
+import { recordRequestTrace } from "./recordRequestTrace";
 import type { StudioController } from "./studioController";
 import type { StudioCommand, StudioPillState, StudioSimpleCommand } from "./types";
 
@@ -60,6 +61,26 @@ export function parsePillState(raw: unknown): StudioPillState | null {
 
 /** Studio window contract: read the take, ask for a command. The pill opens the Studio. */
 export function registerStudioIpc(ipcMain: RendererIpcMain, studio: StudioController) {
+	ipcMain.on("record-request-trace", (event, raw: unknown) => {
+		if (!raw || typeof raw !== "object") return;
+		const entry = raw as Record<string, unknown>;
+		if (typeof entry.token !== "number" || typeof entry.stage !== "string") return;
+		const flags: Record<string, boolean | number | null> = {};
+		if (entry.flags && typeof entry.flags === "object")
+			for (const [key, value] of Object.entries(entry.flags).slice(0, 16))
+				if (
+					value === null ||
+					typeof value === "boolean" ||
+					(typeof value === "number" && Number.isFinite(value))
+				)
+					flags[key.slice(0, 48)] = value;
+		recordRequestTrace.add(entry.token, entry.stage, flags);
+		studio.recordProgress(event.sender, entry.token, entry.stage, flags);
+	});
+	ipcMain.on("studio-record-ready", (event, ready: unknown) =>
+		studio.recordReady(event.sender, ready === true),
+	);
+	ipcMain.handle("studio-record", () => studio.requestRecord());
 	ipcMain.handle("studio-open", () => {
 		studio.open();
 		return { opened: true };

@@ -82,6 +82,7 @@ import { installWebContentsSecurityGuards, type TrustedRendererConfig } from "./
 import { ensureModels, isModelOnDisk, modelPaths } from "./stt/modelManager";
 import { parseStudioCommand, registerStudioIpc } from "./studio/ipc";
 import { moveStudioOffCapture, returnStudioTo } from "./studio/niriStudioPlacement";
+import { recordRequestTrace } from "./studio/recordRequestTrace";
 import { StudioController } from "./studio/studioController";
 import { registerTranscriptIpc, sendTranscriptSnapshot } from "./transcript/ipc";
 import { LiveTranscriptService } from "./transcript/liveTranscript";
@@ -1007,6 +1008,7 @@ app.on("before-quit", (event) => {
 	quitCaptureGuard.beforeQuit(event);
 });
 
+const tracedPillContents = new WeakSet<object>();
 let agentServer: AgentServer | null = null;
 let agentTranscriber: ParakeetProcess | null = null;
 
@@ -1032,6 +1034,7 @@ function startAgentServer(sttModelsDir: string) {
 		studioCommand: (raw) => {
 			const command = parseStudioCommand(raw);
 			if (!command || !studio) return false;
+			if (command === "record") return studio.requestRecord();
 			studio.command(command);
 			return true;
 		},
@@ -1416,7 +1419,25 @@ appReady?.then(async () => {
 			switchToHudWrapper();
 		},
 		createWindow: (near) => createStudioWindow(near),
-		sendToPill: (channel, payload) => currentHudWindow()?.webContents.send(channel, payload),
+		sendToPill: (channel, payload) => {
+			const pill = currentHudWindow();
+			if (channel === "hud-start-recording" && typeof payload === "number") {
+				recordRequestTrace.add(payload, "delivery", {
+					windowId: pill?.id ?? null,
+					loading: pill?.webContents.isLoading() ?? null,
+					destroyed: pill?.isDestroyed() ?? null,
+				});
+				if (pill && !tracedPillContents.has(pill.webContents)) {
+					tracedPillContents.add(pill.webContents);
+					const traceWindow = (stage: string) =>
+						recordRequestTrace.add(recordRequestTrace.currentToken(), stage, { windowId: pill.id });
+					pill.webContents.on("did-start-navigation", () => traceWindow("navigation"));
+					pill.webContents.on("render-process-gone", () => traceWindow("renderer-exit"));
+					pill.webContents.on("destroyed", () => traceWindow("destroyed"));
+				}
+			}
+			pill?.webContents.send(channel, payload);
+		},
 		// macOS keeps protected windows out of capture; on Linux only niri can confirm it.
 		outsideCapture: (nodeId) =>
 			process.platform === "darwin" ? Promise.resolve(true) : studioCaptureGuard.begin(nodeId),

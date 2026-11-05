@@ -39,6 +39,7 @@ import {
 	normalizeRecordingQuality,
 	type RecordingQuality,
 } from "@/lib/recording/recordingQuality";
+import { traceRecordRequest } from "@/lib/recording/recordRequestTrace";
 import { NativeMacWebcamClipLedger } from "@/lib/recording/webcamSidecars";
 import type { CursorCaptureMode, RecordingSessionClip } from "@/lib/recordingSession";
 import { requestCameraAccess } from "@/lib/requestCameraAccess";
@@ -295,6 +296,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	const startMarks = useRef<RecordStartMark[]>([]);
 	const markStart = (stage: string) => {
 		startMarks.current.push({ stage, atMs: Date.now() });
+		traceRecordRequest(stage);
 	};
 	const pendingStartRunId = useRef<number | null>(null);
 	const recordingStartPending = useRef(false);
@@ -1538,6 +1540,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			const readStartupFailure = (): NativeMacRecordingFailure | null =>
 				nativeMacStartFailure.current;
 			const result = await window.electronAPI.startNativeMacRecording(request);
+			if (!result.success) traceRecordRequest("writer-failed");
 			boundStart = result.rendererStop;
 			if (!result.success || !result.recordingId) {
 				throw new Error(result.error ?? "Native capture failed.");
@@ -1594,6 +1597,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			segmentStartedAt.current = activeClipStartedAt.current;
 			allowAutoFinalize.current = true;
 			setRecording(true);
+			traceRecordRequest("writer-started", { recordingId: result.recordingId });
 			setPaused(false);
 			setElapsedSeconds(
 				Math.floor(Math.max(0, Date.now() - (segmentStartedAt.current ?? Date.now())) / 1000),
@@ -1636,6 +1640,11 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		currentNativeMacRequest({ id: "portal:selected" }, activeRecordingId);
 
 	const startRecordCountdown = async () => {
+		traceRecordRequest("hook-entry", {
+			pending: pendingStartRunId.current !== null,
+			recording,
+			sourceSelectionInFlight: sourceSelectionInFlight.current,
+		});
 		if (pendingStartRunId.current !== null || recording || sourceSelectionInFlight.current) return;
 
 		takeUsesSystemCursor.current = false;
@@ -1692,6 +1701,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			if (window.electronAPI.getPlatform() !== "linux")
 				await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
 		} catch (error) {
+			traceRecordRequest("prepare-failed");
 			console.error("Failed to prepare recording:", error);
 			toast.error(error instanceof Error ? error.message : "Failed to prepare recording");
 		} finally {
@@ -1701,6 +1711,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			}
 			if (portalOwnsSource && !captureStarted) void window.electronAPI.cancelNativeLinuxPrepare?.();
 			if (pendingStartRunId.current === runId) pendingStartRunId.current = null;
+			traceRecordRequest("cleanup", { captureStarted });
 		}
 	};
 
@@ -1708,6 +1719,13 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		countdownRunToken?: number,
 		preparedRecordingId?: number | null,
 	) => {
+		traceRecordRequest("start-entry", {
+			pending: recordingStartPending.current,
+			selectionInFlight: sourceSelectionInFlight.current,
+			nativeMacWriter: nativeMacRecording.current !== null,
+			nativeWindowsWriter: nativeWindowsRecording.current !== null,
+			browserWriter: screenRecorder.current !== null,
+		});
 		if (
 			recordingStartPending.current ||
 			sourceSelectionInFlight.current ||

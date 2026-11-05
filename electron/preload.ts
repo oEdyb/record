@@ -259,6 +259,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		return () => ipcRenderer.removeListener("review-handoff", listener);
 	},
 	studioCommand: (command: unknown) => {
+		if (command === "record") return ipcRenderer.invoke("studio-record");
 		ipcRenderer.send("studio-command", command);
 	},
 	/** Pill -> main: the pill opened a panel only it can show (permissions), so bring it forward. */
@@ -726,10 +727,19 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	updateGlobalShortcuts: (shortcuts: ShortcutsConfig) => {
 		return ipcRenderer.invoke("update-global-shortcuts", shortcuts);
 	},
-	onHudStartRecording: (callback: () => void) => {
-		const listener = () => callback();
+	traceRecordRequest: (entry: {
+		token: number;
+		stage: string;
+		flags: Record<string, boolean | number | null>;
+	}) => ipcRenderer.send("record-request-trace", entry),
+	onHudStartRecording: (callback: (token?: number) => void) => {
+		const listener = (_event: Electron.IpcRendererEvent, token?: number) => callback(token);
 		ipcRenderer.on("hud-start-recording", listener);
-		return () => ipcRenderer.removeListener("hud-start-recording", listener);
+		ipcRenderer.send("studio-record-ready", true);
+		return () => {
+			ipcRenderer.removeListener("hud-start-recording", listener);
+			ipcRenderer.send("studio-record-ready", false);
+		};
 	},
 	onHudToggleRecordingPause: (callback: () => void) => {
 		const listener = () => callback();

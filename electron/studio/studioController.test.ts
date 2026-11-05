@@ -80,6 +80,7 @@ function setup(
 		now: () => 1_000,
 		...overrides,
 	});
+	controller.recordReady(pill.window.webContents, true);
 	return { controller, studio, pill, state, sendToPill, outsideCapture, openReview };
 }
 
@@ -217,7 +218,7 @@ describe("StudioController", () => {
 		controller.sync();
 		expect(studio.visible()).toBe(true);
 		controller.command("record");
-		expect(sendToPill).toHaveBeenCalledWith("hud-start-recording");
+		expect(sendToPill).toHaveBeenCalledWith("hud-start-recording", expect.any(Number));
 		state.take = recording;
 		controller.command("record");
 		expect(sendToPill).toHaveBeenCalledOnce();

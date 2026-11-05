@@ -3,6 +3,7 @@ import { chmod, lstat, mkdir, unlink, writeFile } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import type { BrowserWindow } from "electron";
+import { recordRequestTrace } from "../studio/recordRequestTrace";
 import { type CutAudioRequest, renderCutAudio } from "./cutAudio";
 import { clickScript, controlsScript, typeScript } from "./uiScripts";
 
@@ -34,7 +35,9 @@ export interface AgentServerDeps {
 	/** The Studio's snapshot, or null when there is no Studio. */
 	studioState?: () => unknown;
 	/** Runs a Studio command; false when the command is not one the Studio knows. */
-	studioCommand?: (command: unknown) => boolean;
+	studioCommand?: (
+		command: unknown,
+	) => boolean | Promise<import("../studio/types").StudioRecordResult>;
 	version: string;
 }
 
@@ -136,16 +139,24 @@ export class AgentServer {
 				if (!this.deps.openStudio) throw new Error("This build has no Studio.");
 				this.deps.openStudio();
 				return { opened: true };
+			case "studio.record-trace":
+				return recordRequestTrace.read();
 			case "studio.state":
 				if (!this.deps.studioState) throw new Error("This build has no Studio.");
 				return this.deps.studioState();
-			case "studio.command":
+			case "studio.command": {
 				if (!this.deps.studioCommand) throw new Error("This build has no Studio.");
-				if (!this.deps.studioCommand(params.command))
+				const outcome = await this.deps.studioCommand(params.command);
+				if (!outcome)
 					throw new Error(
 						"Unknown Studio command. Try record, pause, resume, stop, remove-last, undo-remove, toggle-mic, toggle-camera, toggle-system-audio, finish.",
 					);
+				if (typeof outcome === "object") {
+					if (!outcome.success) throw new Error(outcome.error);
+					return outcome;
+				}
 				return { sent: params.command };
+			}
 			case "screenshot": {
 				const window = this.pick(params.window);
 				const image = await window.webContents.capturePage();

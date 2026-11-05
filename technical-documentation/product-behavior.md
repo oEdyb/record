@@ -196,8 +196,17 @@ permission is granted. On macOS, one standby capture helper loads the capture fr
 encoder without capturing; Record hands it the request. Main starts it a second after launch and
 checks every minute while nothing records (Olle, 2026-10-05: the first Record after launch was
 2.3 s cold); pointer or focus on Record also warms it. It exits after 10 idle minutes and is
-never reused after 9; without it Record spawns a fresh helper as before. A pending start disables duplicate Record and setup changes. Only the
-first successful screen append starts the HUD timer (Olle, 2026-10-04); camera, microphone and
+never reused after 9; without it Record spawns a fresh helper as before. A pending start disables duplicate Record and setup changes.
+
+Studio and local-agent Record requests create the recording owner if needed and
+wait until its start listener is subscribed. Send each request once. Report success
+only after native writer confirmation with the matching recording ID; command
+acceptance and a live helper process are insufficient. Report busy or failed
+starts to both callers. A 30-second unconfirmed request reports uncertainty and
+records its last stage locally; it never retries a toggle or claims cancellation.
+Source and permission handoffs remain visible and can continue after user input.
+
+Only the first successful screen append starts the HUD timer (Olle, 2026-10-04); camera, microphone and
 system audio join on the same epoch when their first sample lands, and each original keeps its
 offset. Continue obeys the same barrier. A source that has not appended within two seconds of
 the epoch fails the take loudly, even after the timer started. High
