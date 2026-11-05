@@ -55,6 +55,12 @@ export class RecordRequest {
 	}
 
 	ready(sender: object, ready: boolean) {
+		if (this.pending)
+			recordRequestTrace.add(this.pending.token, "subscription", {
+				ready,
+				ownerPresent: this.deps.owner() !== null,
+				matchesOwner: sender === this.deps.owner(),
+			});
 		if (sender !== this.deps.owner()) return;
 		if (ready) this.subscribers.add(sender);
 		else this.subscribers.delete(sender);
@@ -68,6 +74,11 @@ export class RecordRequest {
 	}
 
 	unavailable(sender: object) {
+		if (this.pending)
+			recordRequestTrace.add(this.pending.token, "subscription-invalidated", {
+				matchesOwner: sender === this.deps.owner(),
+				wasDispatched: this.pending.owner === sender,
+			});
 		this.subscribers.delete(sender);
 		if (this.pending?.owner === sender) {
 			recordRequestTrace.add(this.pending.token, "owner-unavailable");
