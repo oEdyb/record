@@ -39,6 +39,9 @@ describe("useMicrophoneDevices", () => {
 		const { result } = renderHook(() => useMicrophoneDevices(true));
 		await waitFor(() => expect(result.current.devices[0]?.label).toBe("Mic 1"));
 		expect(getUserMedia).toHaveBeenCalledTimes(1);
+		expect(getUserMedia).toHaveBeenCalledWith({
+			audio: { autoGainControl: false, echoCancellation: false, noiseSuppression: false },
+		});
 		expect(stop).toHaveBeenCalled();
 	});
 });

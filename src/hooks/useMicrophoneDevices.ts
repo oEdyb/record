@@ -83,7 +83,9 @@ async function listAudioInputs(): Promise<MicrophoneDevice[]> {
 		);
 	let inputs = await read();
 	if (inputs.length === 0 || inputs.some((device) => !device.label)) {
-		const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+		const stream = await navigator.mediaDevices.getUserMedia({
+			audio: { autoGainControl: false, echoCancellation: false, noiseSuppression: false },
+		});
 		try {
 			inputs = await read();
 		} finally {

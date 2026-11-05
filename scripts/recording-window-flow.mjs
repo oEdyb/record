@@ -282,6 +282,19 @@ w.loadURL('data:text/html,'+encodeURIComponent('<title>Private recording fixture
 		};
 		const hud = await page("hud-overlay");
 		hud.setDefaultTimeout(10000);
+		await hud.evaluate(() => {
+			window.__privateMeterSettings = [];
+			const getUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+			navigator.mediaDevices.getUserMedia = async (constraints) => {
+				const stream = await getUserMedia(constraints);
+				if (constraints.audio && !constraints.video)
+					window.__privateMeterSettings.push(
+						...stream.getAudioTracks().map((track) => track.getSettings()),
+					);
+				return stream;
+			};
+		});
+
 		hud.on("console", (m) => console.log("HUD", m.type(), m.text()));
 		await hud.waitForTimeout(1500);
 		await hud.evaluate(() =>
@@ -294,6 +307,14 @@ w.loadURL('data:text/html,'+encodeURIComponent('<title>Private recording fixture
 		await hud.getByTestId("launch-webcam-button").click();
 		await hud.evaluate(() => window.electronAPI.setRecordingPrefs({ micDeviceId: "default" }));
 		await hud.getByTestId("launch-microphone-button").click();
+		await hud.waitForFunction(() => window.__privateMeterSettings.length > 0);
+		for (const settings of await hud.evaluate(() => window.__privateMeterSettings)) {
+			assert.equal(settings.autoGainControl, false);
+			assert.equal(settings.echoCancellation, false);
+			assert.equal(settings.noiseSuppression, false);
+		}
+		console.log("PASS microphone meters use unprocessed input");
+
 		await hud.evaluate(() =>
 			window.electronAPI.onNativeMacRecordingError((e) =>
 				console.error("NATIVE FAILURE", JSON.stringify(e)),

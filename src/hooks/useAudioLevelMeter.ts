@@ -41,7 +41,14 @@ export function useAudioLevelMeter(options: AudioLevelMeterOptions) {
 		const startMonitoring = async () => {
 			try {
 				const constraints: MediaStreamConstraints = {
-					audio: options.deviceId ? { deviceId: { exact: options.deviceId } } : true,
+					// This meter represents the raw native recording input. Browser voice
+					// processing can boost/suppress it and may adjust device gain.
+					audio: {
+						...(options.deviceId ? { deviceId: { exact: options.deviceId } } : {}),
+						autoGainControl: false,
+						echoCancellation: false,
+						noiseSuppression: false,
+					},
 					video: false,
 				};
 
