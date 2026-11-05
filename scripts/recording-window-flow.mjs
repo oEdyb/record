@@ -251,7 +251,7 @@ app.setPath('userData',${JSON.stringify(path.join(run, "fixture-profile"))});
 app.commandLine.appendSwitch('autoplay-policy','no-user-gesture-required');
 app.whenReady().then(()=>{
 const w=new BrowserWindow({width:960,height:540,title:'Private recording fixture',webPreferences:{backgroundThrottling:false}});
-w.loadURL('data:text/html,'+encodeURIComponent('<title>Private recording fixture</title><style>body{background:teal;color:white;font:40px monospace}div{animation:slide 3s infinite alternate}@keyframes slide{to{transform:translateX(300px)}}</style><div>Private recording fixture</div><script>const a=new AudioContext();const o=a.createOscillator();const g=a.createGain();g.gain.value=.02;o.connect(g).connect(a.destination);o.start();a.resume();<\/script>'));
+w.loadURL('data:text/html,'+encodeURIComponent('<title>Private recording fixture</title><style>body{background:teal;color:white;font:40px monospace}div{animation:slide 3s infinite alternate}@keyframes slide{to{transform:translateX(300px)}}</style><div>Private recording fixture</div><pre style="font:12px monospace;background:white;color:black;position:absolute;left:24px;top:90px;padding:8px">Sharpness 0123456789 Il1 O0<br>Screen export probe: + - # ?</pre><script>const a=new AudioContext();const o=a.createOscillator();const g=a.createGain();g.gain.value=.02;o.connect(g).connect(a.destination);o.start();a.resume();<\/script>'));
 });`,
 	);
 	const fixture = await _electron.launch({

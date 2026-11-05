@@ -154,7 +154,27 @@ export async function exportPrivateTake({
 			{ encoding: "utf8" },
 		),
 	);
-	assert(probe.streams.some((stream) => stream.codec_type === "video"));
+	const sourceProbe = JSON.parse(
+		execFileSync(
+			"ffprobe",
+			[
+				"-v",
+				"error",
+				"-select_streams",
+				"v:0",
+				"-show_entries",
+				"stream=width,height",
+				"-of",
+				"json",
+				copied.clips[0].screenVideoPath,
+			],
+			{ encoding: "utf8" },
+		),
+	);
+	const video = probe.streams.find((stream) => stream.codec_type === "video");
+	assert(video, "Missing exported video");
+	assert(video.width >= sourceProbe.streams[0].width, "Export reduced source width");
+	assert(video.height >= sourceProbe.streams[0].height, "Export reduced source height");
 	assert(probe.streams.some((stream) => stream.codec_type === "audio"));
 	const expected =
 		copied.clips.filter((clip) => !clip.removed).reduce((sum, clip) => sum + clip.durationMs, 0) /
@@ -187,6 +207,37 @@ export async function exportPrivateTake({
 		],
 		{ stdio: "pipe" },
 	);
+	const tail = execFileSync(
+		"ffmpeg",
+		[
+			"-v",
+			"error",
+			"-threads",
+			"4",
+			"-ss",
+			String(Math.max(0, expected - 2)),
+			"-i",
+			output,
+			"-map",
+			"0:v:0",
+			"-an",
+			"-t",
+			"1",
+			"-vf",
+			"fps=5",
+			"-filter_threads",
+			"1",
+			"-f",
+			"framemd5",
+			"-",
+		],
+		{ encoding: "utf8" },
+	);
+	const hashes = tail
+		.split("\n")
+		.filter((line) => line.trim() && !line.startsWith("#"))
+		.map((line) => line.split(",").at(-1).trim());
+	assert(new Set(hashes).size >= 2, "Private fixture froze before the end of the export");
 	await writeFile(path.join(run, "export-probe.json"), JSON.stringify(probe, null, 2));
 	console.log(
 		"PASS copied private take exports with padding, no account, full decode and duration",
