@@ -1,5 +1,5 @@
 import { fixWebmDuration } from "@fix-webm-duration/fix";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import { useScopedT } from "@/contexts/I18nContext";
 import { MIC_GAIN_BOOST, mixAudioTracks } from "@/lib/audioMix";
@@ -54,6 +54,7 @@ import {
 	webcamFormatFromSettings,
 } from "@/lib/webcamFormats";
 import { createRecorderHandle, type RecorderHandle } from "./recorderHandle";
+import { RecorderLifecycle, recorderPresentation } from "./recorderLifecycle";
 
 const DEFAULT_WIDTH = 1920;
 const DEFAULT_HEIGHT = 1080;
@@ -150,15 +151,15 @@ type UseScreenRecorderReturn = {
 
 type NativeWindowsRecordingHandle = {
 	recordingId: number;
-	finalizing: boolean;
-	paused: boolean;
+	readonly finalizing: boolean;
+	readonly paused: boolean;
 };
 
 type NativeMacRecordingHandle = {
 	recordingId: number;
 	rendererStop?: NativeRecordingAppStopRequest;
-	finalizing: boolean;
-	paused: boolean;
+	readonly finalizing: boolean;
+	readonly paused: boolean;
 	currentClipIndex: number;
 	/**
 	 * Offset for the active clip's camera file. Each screen clip gets its own
@@ -219,9 +220,10 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		});
 	}, [t]);
 	const [preferencesReady, setPreferencesReady] = useState(false);
-	const [recording, setRecording] = useState(false);
-	const [paused, setPaused] = useState(false);
-	const [saving, setSaving] = useState(false);
+	const [lifecycle] = useState(() => new RecorderLifecycle());
+	const recorderState = useSyncExternalStore(lifecycle.subscribe, lifecycle.getSnapshot);
+	const { recording, paused, saving, countdownActive, clipFinalizing, sourceSelecting } =
+		recorderPresentation(recorderState);
 	const [elapsedSeconds, setElapsedSeconds] = useState(0);
 	const [microphoneEnabled, setMicrophoneEnabled] = useState(false);
 	const [microphoneDeviceId, setMicrophoneDeviceId] = useState<string | undefined>(undefined);
@@ -289,20 +291,12 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	const recordingId = useRef<number>(0);
 	const accumulatedDurationMs = useRef(0);
 	const segmentStartedAt = useRef<number | null>(null);
-	const finalizingRecordingId = useRef<number | null>(null);
-	const allowAutoFinalize = useRef(false);
-	const discardRecordingId = useRef<number | null>(null);
-	const restarting = useRef(false);
 	const countdownRunId = useRef(0);
 	const startMarks = useRef<RecordStartMark[]>([]);
 	const markStart = (stage: string) => {
 		startMarks.current.push({ stage, atMs: Date.now() });
 		traceRecordRequest(stage);
 	};
-	const pendingStartRunId = useRef<number | null>(null);
-	const recordingStartPending = useRef(false);
-	const [countdownActive, setCountdownActive] = useState(false);
-	const [clipFinalizing, setClipFinalizing] = useState(false);
 	const [recordedClips, setRecordedClips] = useState<RecordingSessionClip[]>([]);
 	const [activeClipElapsedMs, setActiveClipElapsedMs] = useState(0);
 	const activeClipStartedAt = useRef<number | null>(null);
@@ -311,10 +305,6 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	const finalizingClipMs = useRef(0);
 	// Pause and Continue each finish before the next toggle; two hotkey presses can
 	// arrive before React re-renders the HUD with the finalizing state.
-	const nativeMacToggleInFlight = useRef(false);
-	const sourceSelectionInFlight = useRef(false);
-	const [sourceSelecting, setSourceSelecting] = useState(false);
-	const idleSourceCancellationRequested = useRef(false);
 	const pendingNativeMacInterruption = useRef<Exclude<
 		NativeMacRecordingInterruption,
 		"source-active" | "microphone-defaulted"
@@ -495,7 +485,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					track.onended = () => {
 						webcamStream.current = null;
 						setWebcamPreviewStream(null);
-						if (!restarting.current) {
+						if (!lifecycle.restarting) {
 							setWebcamEnabledState(false);
 							void window.electronAPI?.setRecordingPrefs?.({ camEnabled: false });
 							toast.error(t("recording.cameraDisconnected"));
@@ -550,6 +540,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		recordingQuality,
 		t,
 		showCameraBlocked,
+		lifecycle,
 	]);
 
 	// While this window holds the camera, the standby capture helper may hold it too, so
@@ -589,16 +580,17 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			duration: number,
 			activeRecordingId: number,
 		) => {
-			if (finalizingRecordingId.current === activeRecordingId) {
+			if (lifecycle.finalizingId === activeRecordingId) {
 				return;
 			}
-			finalizingRecordingId.current = activeRecordingId;
-			// Only show the "Saving…" spinner for genuine saves — not for cancel/restart
-			// flows where discardRecordingId has already been set.
-			const isDiscarded = discardRecordingId.current === activeRecordingId;
-			if (!isDiscarded) {
-				setSaving(true);
-			}
+			if (
+				!lifecycle.transition({
+					type: "begin-stop",
+					takeId: activeRecordingId,
+					intent: lifecycle.intent() ?? "save",
+				})
+			)
+				return;
 
 			if (screenRecorder.current === activeScreenRecorder) {
 				screenRecorder.current = null;
@@ -608,8 +600,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			}
 
 			teardownMedia();
-			setRecording(false);
-			setPaused(false);
+			lifecycle.transition({ type: "writer-released", takeId: activeRecordingId });
+
 			setElapsedSeconds(0);
 			accumulatedDurationMs.current = 0;
 			segmentStartedAt.current = null;
@@ -623,7 +615,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				let webcamIncludedInSave = false;
 				try {
 					const screenBlob = await activeScreenRecorder.recordedBlobPromise;
-					if (discardRecordingId.current === activeRecordingId) {
+					if (lifecycle.discardId === activeRecordingId) {
 						window.electronAPI?.discardCursorTelemetry(activeRecordingId);
 						return;
 					}
@@ -695,35 +687,40 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					if (activeWebcamRecorder && !(storeSucceeded && webcamIncludedInSave)) {
 						await activeWebcamRecorder.discard().catch(() => undefined);
 					}
-					if (finalizingRecordingId.current === activeRecordingId) {
-						finalizingRecordingId.current = null;
-					}
-					if (discardRecordingId.current === activeRecordingId) {
-						discardRecordingId.current = null;
-					}
-					setSaving(false);
+					lifecycle.transition({ type: "saved", takeId: activeRecordingId });
 				}
 			})();
 		},
-		[cursorCaptureMode, teardownMedia],
+		[cursorCaptureMode, teardownMedia, lifecycle],
 	);
 
 	const finalizeNativeWindowsRecording = useCallback(
 		async (discard = false) => {
+			const pending = lifecycle.transport();
+			if (pending) {
+				lifecycle.transition({ type: "request-stop", intent: discard ? "discard" : "save" });
+				await pending;
+			}
 			const activeNativeRecording = nativeWindowsRecording.current;
 			if (!activeNativeRecording || activeNativeRecording.finalizing) {
 				return false;
 			}
 
-			activeNativeRecording.finalizing = true;
-			if (!discard) {
-				setSaving(true);
-			}
+			lifecycle.transition({ type: "request-stop", intent: discard ? "discard" : "save" });
+			lifecycle.transition({
+				type: "begin-stop",
+				takeId: activeNativeRecording.recordingId,
+				intent: discard ? "discard" : "save",
+			});
+			discard = lifecycle.intent() !== "save";
 
 			const clearNativeRecordingState = () => {
 				nativeWindowsRecording.current = null;
-				setRecording(false);
-				setPaused(false);
+				lifecycle.transition({
+					type: "writer-released",
+					takeId: activeNativeRecording.recordingId,
+				});
+
 				setElapsedSeconds(0);
 				accumulatedDurationMs.current = 0;
 				segmentStartedAt.current = null;
@@ -768,17 +765,19 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				clearNativeRecordingState();
 				return true;
 			} finally {
-				if (discardRecordingId.current === activeNativeRecording.recordingId) {
-					discardRecordingId.current = null;
-				}
-				setSaving(false);
+				lifecycle.transition({ type: "saved", takeId: activeNativeRecording.recordingId });
 			}
 		},
-		[t],
+		[t, lifecycle],
 	);
 
 	const saveNativeMacRecording = useCallback(
 		(discard = false): Promise<NativeMacSavedRecording> => {
+			const pending = lifecycle.transport();
+			if (pending) {
+				lifecycle.transition({ type: "request-stop", intent: discard ? "discard" : "save" });
+				return pending.then(() => saveNativeMacRecordingRef.current(lifecycle.intent() !== "save"));
+			}
 			const activeNativeRecording = nativeMacRecording.current;
 			if (!activeNativeRecording || activeNativeRecording.finalizing) {
 				return (
@@ -791,12 +790,15 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				);
 			}
 
-			activeNativeRecording.finalizing = true;
+			lifecycle.transition({ type: "request-stop", intent: discard ? "discard" : "save" });
+			lifecycle.transition({
+				type: "begin-stop",
+				takeId: activeNativeRecording.recordingId,
+				intent: discard ? "discard" : "save",
+			});
+			discard = lifecycle.intent() !== "save";
 			const promise = (async (): Promise<NativeMacSavedRecording> => {
 				const clickedAtMs = Date.now();
-				if (!discard) {
-					setSaving(true);
-				}
 				const activeWebcamRecorder = webcamRecorder.current;
 				const pendingWebcamClip = pendingNativeMacWebcamClip.current;
 				if (pendingNativeMacWebcamClip.current === pendingWebcamClip) {
@@ -821,15 +823,17 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
 				const clearNativeRecordingState = () => {
 					nativeMacRecording.current = null;
-					setRecording(false);
-					setPaused(false);
+					lifecycle.transition({
+						type: "writer-released",
+						takeId: activeNativeRecording.recordingId,
+					});
+
 					setElapsedSeconds(0);
 					accumulatedDurationMs.current = 0;
 					segmentStartedAt.current = null;
 					activeClipStartedAt.current = null;
 					setActiveClipElapsedMs(0);
 					setRecordedClips([]);
-					setClipFinalizing(false);
 				};
 
 				try {
@@ -949,16 +953,16 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					if (pendingWebcamClip && !pendingWebcamRecorderQueued) {
 						unclaimedWebcamRecorders.add(pendingWebcamClip.recorder);
 					}
-					if (discardedTake) {
-						await nativeMacWebcamClips.current.discardUnclaimed([...unclaimedWebcamRecorders]);
-					} else {
-						await nativeMacWebcamClips.current.releaseUnclaimed([...unclaimedWebcamRecorders]);
+					try {
+						if (discardedTake) {
+							await nativeMacWebcamClips.current.discardUnclaimed([...unclaimedWebcamRecorders]);
+						} else {
+							await nativeMacWebcamClips.current.releaseUnclaimed([...unclaimedWebcamRecorders]);
+						}
+						nativeMacWebcamClips.current.clear();
+					} finally {
+						lifecycle.transition({ type: "saved", takeId: activeNativeRecording.recordingId });
 					}
-					nativeMacWebcamClips.current.clear();
-					if (discardRecordingId.current === activeNativeRecording.recordingId) {
-						discardRecordingId.current = null;
-					}
-					setSaving(false);
 				}
 			})()
 				.catch((error: unknown): NativeMacSavedRecording => {
@@ -991,7 +995,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			};
 			return promise;
 		},
-		[queueNativeMacWebcamClipFinalization, t],
+		[queueNativeMacWebcamClipFinalization, t, lifecycle],
 	);
 
 	const finalizeNativeMacRecording = useCallback(
@@ -1093,17 +1097,16 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			cleanupNativeMacError = window.electronAPI.onNativeMacRecordingError((failure) => {
 				const activeRecording = nativeMacRecording.current;
 				if (!activeRecording) {
-					if (recordingStartPending.current) nativeMacStartFailure.current = failure;
+					if (lifecycle.starting) nativeMacStartFailure.current = failure;
 					return;
 				}
 				if (activeRecording.finalizing) return;
 
-				activeRecording.paused = true;
+				lifecycle.transition({ type: "writer-failed", takeId: activeRecording.recordingId });
 				accumulatedDurationMs.current = getRecordingDurationMs();
 				segmentStartedAt.current = null;
 				activeClipStartedAt.current = null;
-				setPaused(true);
-				setClipFinalizing(false);
+
 				const activeWebcamRecorder = webcamRecorder.current?.recorder;
 				if (activeWebcamRecorder?.state === "recording") {
 					activeWebcamRecorder.pause();
@@ -1128,7 +1131,10 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 							toast.info("The recorded window is back. Continue when ready.");
 						return;
 					}
-					if (nativeMacToggleInFlight.current) {
+					if (
+						lifecycle.transport() !== null ||
+						lifecycle.getSnapshot().kind === "configuring-resume"
+					) {
 						pendingNativeMacInterruption.current = reason;
 						return;
 					}
@@ -1190,9 +1196,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			void safeHideCountdownOverlay(activeRunId);
 			if (window.electronAPI.getPlatform() === "linux")
 				void window.electronAPI.cancelNativeLinuxPrepare?.();
-			allowAutoFinalize.current = false;
-			restarting.current = false;
-			discardRecordingId.current = null;
+
 			if (nativeWindowsRecording.current) {
 				void finalizeNativeWindowsRecordingRef.current(true);
 			}
@@ -1202,6 +1206,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				void finalizeNativeMacRecordingRef.current(false);
 			}
 
+			if (screenRecorder.current && lifecycle.autoFinalize)
+				lifecycle.transition({ type: "detach" });
 			if (
 				screenRecorder.current?.recorder.state === "recording" ||
 				screenRecorder.current?.recorder.state === "paused"
@@ -1226,11 +1232,12 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			webcamRecorder.current = null;
 			teardownMedia();
 		};
-	}, [teardownMedia, safeHideCountdownOverlay, getRecordingDurationMs]);
+	}, [teardownMedia, safeHideCountdownOverlay, getRecordingDurationMs, lifecycle]);
 	const cancelCountdown = () => {
 		const activeRunId = countdownRunId.current;
 		countdownRunId.current += 1;
-		setCountdownActive(false);
+		if (lifecycle.starting || lifecycle.getSnapshot().kind === "preparing")
+			lifecycle.transition({ type: "cancel-start" });
 		void safeHideCountdownOverlay(activeRunId);
 		if (window.electronAPI.getPlatform() === "linux")
 			void window.electronAPI.cancelNativeLinuxPrepare?.();
@@ -1339,6 +1346,10 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				},
 			};
 			const result = await window.electronAPI.startNativeWindowsRecording(request);
+			if (!isCountdownRunActive(countdownRunToken)) {
+				await window.electronAPI.stopNativeWindowsRecording(true);
+				return true;
+			}
 			if (!result.success || !result.recordingId) {
 				throw new Error(result.error ?? "Native Windows capture failed.");
 			}
@@ -1353,15 +1364,19 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			recordingId.current = result.recordingId;
 			nativeWindowsRecording.current = {
 				recordingId: result.recordingId,
-				finalizing: false,
-				paused: false,
+				get finalizing() {
+					return lifecycle.isFinalizing(this.recordingId);
+				},
+				get paused() {
+					return lifecycle.isPaused(this.recordingId);
+				},
 			};
 			accumulatedDurationMs.current = 0;
 			segmentStartedAt.current = Date.now();
-			allowAutoFinalize.current = true;
-			setRecording(true);
+
+			lifecycle.transition({ type: "started", takeId: recordingId.current });
 			traceRecordRequest("windows-writer-started", { recordingId: result.recordingId });
-			setPaused(false);
+
 			setElapsedSeconds(0);
 			return true;
 		} catch (error) {
@@ -1475,7 +1490,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
 	const startNativeMacRecordingIfAvailable = async (
 		selectedSource: CaptureSource,
-		countdownRunToken?: number,
+		countdownRunToken = countdownRunId.current,
 		preparedRecordingId?: number | null,
 	) => {
 		let boundStart: NativeRecordingAppStopRequest | undefined;
@@ -1571,14 +1586,18 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			nativeMacRecording.current = {
 				recordingId: result.recordingId,
 				rendererStop: result.rendererStop,
-				finalizing: false,
-				paused: false,
+				get finalizing() {
+					return lifecycle.isFinalizing(this.recordingId);
+				},
+				get paused() {
+					return lifecycle.isPaused(this.recordingId);
+				},
 				currentClipIndex: 0,
 				webcamOffsetMs: 0,
 			};
 			nativeMacWebcamClips.current.clear();
 			setRecordedClips([]);
-			setClipFinalizing(false);
+
 			activeClipStartedAt.current = result.startedAtMs ?? Date.now();
 			setActiveClipElapsedMs(Math.max(0, Date.now() - activeClipStartedAt.current));
 			if (platform === "linux") {
@@ -1597,10 +1616,10 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			} else webcamRecorder.current = null;
 			accumulatedDurationMs.current = 0;
 			segmentStartedAt.current = activeClipStartedAt.current;
-			allowAutoFinalize.current = true;
-			setRecording(true);
+
+			lifecycle.transition({ type: "started", takeId: recordingId.current });
 			traceRecordRequest("writer-started", { recordingId: result.recordingId });
-			setPaused(false);
+
 			setElapsedSeconds(
 				Math.floor(Math.max(0, Date.now() - (segmentStartedAt.current ?? Date.now())) / 1000),
 			);
@@ -1648,20 +1667,20 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
 	const startRecordCountdown = async () => {
 		traceRecordRequest("hook-entry", {
-			pending: pendingStartRunId.current !== null,
+			pending: lifecycle.pendingStartId !== null,
 			recording,
-			sourceSelectionInFlight: sourceSelectionInFlight.current,
+			sourceSelectionInFlight: lifecycle.selecting,
 			writerPending:
-				recordingStartPending.current ||
+				lifecycle.starting ||
 				nativeMacRecording.current !== null ||
 				nativeWindowsRecording.current !== null ||
 				screenRecorder.current !== null,
 		});
 		if (
-			pendingStartRunId.current !== null ||
+			lifecycle.pendingStartId !== null ||
 			recording ||
-			sourceSelectionInFlight.current ||
-			recordingStartPending.current ||
+			lifecycle.selecting ||
+			lifecycle.starting ||
 			hasCaptureWriter()
 		)
 			return;
@@ -1671,8 +1690,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		markStart("click");
 		const runId = countdownRunId.current + 1;
 		countdownRunId.current = runId;
-		pendingStartRunId.current = runId;
-		setCountdownActive(true);
+		if (!lifecycle.transition({ type: "prepare", runId })) return;
+
 		let portalOwnsSource = false;
 		let captureStarted = false;
 
@@ -1725,35 +1744,36 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			toast.error(error instanceof Error ? error.message : "Failed to prepare recording");
 		} finally {
 			if (isCountdownRunActive(runId)) {
-				setCountdownActive(false);
+				if (lifecycle.starting || lifecycle.getSnapshot().kind === "preparing")
+					lifecycle.transition({ type: "cancel-start" });
 				await safeHideCountdownOverlay(runId);
 			}
 			if (portalOwnsSource && !captureStarted) void window.electronAPI.cancelNativeLinuxPrepare?.();
-			if (pendingStartRunId.current === runId) pendingStartRunId.current = null;
+
 			traceRecordRequest("cleanup", { captureStarted });
 		}
 	};
 
 	const startRecording = async (
-		countdownRunToken?: number,
+		countdownRunToken = countdownRunId.current,
 		preparedRecordingId?: number | null,
 	) => {
 		traceRecordRequest("start-entry", {
-			pending: recordingStartPending.current,
-			selectionInFlight: sourceSelectionInFlight.current,
+			pending: lifecycle.starting,
+			selectionInFlight: lifecycle.selecting,
 			nativeMacWriter: nativeMacRecording.current !== null,
 			nativeWindowsWriter: nativeWindowsRecording.current !== null,
 			browserWriter: screenRecorder.current !== null,
 		});
 		if (
-			recordingStartPending.current ||
-			sourceSelectionInFlight.current ||
+			lifecycle.starting ||
+			lifecycle.selecting ||
 			nativeMacRecording.current ||
 			nativeWindowsRecording.current ||
 			screenRecorder.current
 		)
 			return;
-		recordingStartPending.current = true;
+		if (!lifecycle.transition({ type: "start" })) return;
 		try {
 			if (!isCountdownRunActive(countdownRunToken)) {
 				teardownMedia();
@@ -2016,7 +2036,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			screenRecorder.current.recorder.addEventListener(
 				"error",
 				() => {
-					setRecording(false);
+					lifecycle.transition({ type: "writer-failed", takeId: activeRecordingId });
 				},
 				{ once: true },
 			);
@@ -2038,9 +2058,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
 			accumulatedDurationMs.current = 0;
 			segmentStartedAt.current = Date.now();
-			allowAutoFinalize.current = true;
-			setRecording(true);
-			setPaused(false);
+
+			lifecycle.transition({ type: "started", takeId: recordingId.current });
+
 			setElapsedSeconds(0);
 			window.electronAPI?.setRecordingState(true, recordingId.current, cursorCaptureMode);
 
@@ -2050,7 +2070,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				activeScreenRecorder.recorder.addEventListener(
 					"stop",
 					() => {
-						if (!allowAutoFinalize.current) {
+						if (!lifecycle.autoFinalize) {
 							return;
 						}
 						finalizeRecording(
@@ -2071,8 +2091,6 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			} else {
 				toast.error(t("recording.startFailed"), { description: ipcErrorMessage(error) });
 			}
-			setRecording(false);
-			setPaused(false);
 			setElapsedSeconds(0);
 			accumulatedDurationMs.current = 0;
 			segmentStartedAt.current = null;
@@ -2080,7 +2098,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			webcamRecorder.current = null;
 			teardownMedia();
 		} finally {
-			recordingStartPending.current = false;
+			if (lifecycle.starting) lifecycle.transition({ type: "start-settled" });
 		}
 	};
 
@@ -2088,14 +2106,14 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		if (
 			window.electronAPI.getPlatform() !== "linux" ||
 			recording ||
-			recordingStartPending.current ||
-			pendingStartRunId.current !== null ||
-			sourceSelectionInFlight.current
+			lifecycle.starting ||
+			lifecycle.pendingStartId !== null ||
+			lifecycle.selecting
 		)
 			return { success: false, error: "Source selection requires an idle recorder." };
-		sourceSelectionInFlight.current = true;
-		idleSourceCancellationRequested.current = false;
-		setSourceSelecting(true);
+		if (!lifecycle.transition({ type: "select" }))
+			return { success: false, error: "Recorder is busy." };
+
 		try {
 			const request = currentNativeMacRequest({ id: "portal:choose" }, Date.now());
 			const result = await window.electronAPI.prepareNativeLinuxRecording({
@@ -2111,7 +2129,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				return {
 					success: false,
 					cancelled:
-						idleSourceCancellationRequested.current ||
+						lifecycle.selectionCancelled ||
 						result.error === "The screen capture request was cancelled.",
 					error: result.error,
 				};
@@ -2120,8 +2138,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		} catch (error) {
 			return { success: false, error: ipcErrorMessage(error) };
 		} finally {
-			sourceSelectionInFlight.current = false;
-			setSourceSelecting(false);
+			if (lifecycle.selecting) lifecycle.transition({ type: "selected" });
 		}
 	};
 
@@ -2132,13 +2149,14 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				window.electronAPI.getPlatform() !== "linux" ||
 				!active?.paused ||
 				active.finalizing ||
-				nativeMacToggleInFlight.current ||
-				sourceSelectionInFlight.current ||
+				lifecycle.transport() !== null ||
+				lifecycle.selecting ||
 				!active.rendererStop
 			)
 				return { success: false, error: "Source selection requires a paused recording." };
-			sourceSelectionInFlight.current = true;
-			setSourceSelecting(true);
+			if (!lifecycle.transition({ type: "select" }))
+				return { success: false, error: "Recorder is busy." };
+
 			try {
 				return await (cursorMode
 					? window.electronAPI.selectNativeLinuxSource(active.rendererStop, cursorMode)
@@ -2146,28 +2164,33 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			} catch (error) {
 				return { success: false, error: ipcErrorMessage(error) };
 			} finally {
-				sourceSelectionInFlight.current = false;
-				setSourceSelecting(false);
+				if (lifecycle.selecting) lifecycle.transition({ type: "selected" });
 			}
 		},
-		[],
+		[lifecycle],
 	);
 
 	const togglePaused = () => {
-		if (sourceSelectionInFlight.current) return;
+		if (lifecycle.selecting) return;
 		const activeNativeWindowsRecording = nativeWindowsRecording.current;
 		if (activeNativeWindowsRecording && !activeNativeWindowsRecording.finalizing) {
+			const wasPaused = activeNativeWindowsRecording.paused;
+			if (!lifecycle.transition({ type: wasPaused ? "resume" : "pause" })) return;
 			void (async () => {
-				const continuing = activeNativeWindowsRecording.paused;
+				const continuing = wasPaused;
 				try {
-					if (activeNativeWindowsRecording.paused) {
+					if (continuing) {
+						lifecycle.transition({ type: "resume-dispatched" });
 						const result = await window.electronAPI.resumeNativeWindowsRecording();
 						if (!result.success) {
 							throw new Error(result.error ?? "Failed to resume native Windows recording");
 						}
-						activeNativeWindowsRecording.paused = false;
+						lifecycle.transition({
+							type: "resumed",
+							takeId: activeNativeWindowsRecording.recordingId,
+						});
 						segmentStartedAt.current = Date.now();
-						setPaused(false);
+
 						return;
 					}
 
@@ -2176,16 +2199,25 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					if (!result.success) {
 						throw new Error(result.error ?? "Failed to pause native Windows recording");
 					}
-					activeNativeWindowsRecording.paused = true;
+					lifecycle.transition({
+						type: "paused",
+						takeId: activeNativeWindowsRecording.recordingId,
+					});
 					accumulatedDurationMs.current = pausedAtMs;
 					segmentStartedAt.current = null;
 					setElapsedSeconds(Math.floor(accumulatedDurationMs.current / 1000));
-					setPaused(true);
 				} catch (error) {
 					console.error("Failed to toggle native Windows pause state:", error);
 					toast.error(t(continuing ? "recording.continueFailed" : "recording.pauseFailed"), {
 						description: ipcErrorMessage(error),
 					});
+				} finally {
+					if (lifecycle.transport() || lifecycle.getSnapshot().kind === "configuring-resume")
+						lifecycle.transition({
+							type: "transport-failed",
+							takeId: activeNativeWindowsRecording.recordingId,
+							paused: continuing,
+						});
 				}
 			})();
 			return;
@@ -2193,14 +2225,14 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
 		const activeNativeMacRecording = nativeMacRecording.current;
 		if (activeNativeMacRecording && !activeNativeMacRecording.finalizing) {
-			if (nativeMacToggleInFlight.current) return;
-			nativeMacToggleInFlight.current = true;
+			const wasPaused = activeNativeMacRecording.paused;
+			if (!lifecycle.transition({ type: wasPaused ? "resume" : "pause" })) return;
+
 			void (async () => {
-				const continuing = activeNativeMacRecording.paused;
+				const continuing = wasPaused;
 				const activeWebcamHandle = webcamRecorder.current;
 				try {
-					if (activeNativeMacRecording.paused) {
-						setClipFinalizing(true);
+					if (continuing) {
 						const selectedSource =
 							window.electronAPI.getPlatform() === "linux"
 								? { id: "portal:selected" }
@@ -2230,6 +2262,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 							selectedSource,
 							activeNativeMacRecording.recordingId,
 						);
+						lifecycle.transition({ type: "resume-dispatched" });
 						const result = await window.electronAPI.resumeNativeMacRecording(request);
 						if (!result.success) {
 							if (activeNativeMacRecording.finalizing) return;
@@ -2251,10 +2284,12 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 						webcamRecorder.current = null;
 						activeNativeMacRecording.webcamOffsetMs = 0;
 						activeNativeMacRecording.currentClipIndex = authoritativeClipIndex;
-						activeNativeMacRecording.paused = false;
 						segmentStartedAt.current = result.startedAtMs ?? Date.now();
 						activeClipStartedAt.current = segmentStartedAt.current;
-						if (window.electronAPI.getPlatform() === "linux") {
+						if (
+							window.electronAPI.getPlatform() === "linux" &&
+							lifecycle.getSnapshot().kind !== "stop-queued"
+						) {
 							try {
 								webcamRecorder.current = startNativeClipWebcam(
 									activeNativeMacRecording.recordingId,
@@ -2271,19 +2306,19 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 								);
 							}
 						}
+						lifecycle.transition({ type: "resumed", takeId: activeNativeMacRecording.recordingId });
 						setActiveClipElapsedMs(0);
-						setPaused(false);
+
 						return;
 					}
 
 					const pausedAtMs = getRecordingDurationMs();
 					const activeClipStartedAtMs = activeClipStartedAt.current;
-					activeNativeMacRecording.paused = true;
+
 					finalizingClipMs.current =
 						activeClipStartedAtMs === null ? 0 : Date.now() - activeClipStartedAtMs;
 					activeClipStartedAt.current = null;
-					setPaused(true);
-					setClipFinalizing(true);
+
 					if (activeWebcamHandle) {
 						// Stop may take ownership while Pause waits for the native writer.
 						// Keep the camera writing until the helper acknowledges Pause.
@@ -2296,13 +2331,15 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 						};
 					}
 					const result = await window.electronAPI.pauseNativeMacRecording();
+					if (result.success || result.paused === true)
+						lifecycle.transition({ type: "paused", takeId: activeNativeMacRecording.recordingId });
 					if (activeNativeMacRecording.finalizing) return;
 					if (!result.success && result.paused !== true) {
 						if (pendingNativeMacWebcamClip.current?.recorder === activeWebcamHandle)
 							pendingNativeMacWebcamClip.current = null;
-						activeNativeMacRecording.paused = false;
+						lifecycle.transition({ type: "resumed", takeId: activeNativeMacRecording.recordingId });
 						activeClipStartedAt.current = activeClipStartedAtMs;
-						setPaused(false);
+
 						throw new Error(result.error ?? "Failed to pause native recording");
 					}
 					if (activeWebcamHandle) {
@@ -2341,9 +2378,14 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 						description: ipcErrorMessage(error),
 					});
 				} finally {
-					nativeMacToggleInFlight.current = false;
+					if (lifecycle.transport() || lifecycle.getSnapshot().kind === "configuring-resume")
+						lifecycle.transition({
+							type: "transport-failed",
+							takeId: activeNativeMacRecording.recordingId,
+							paused: continuing,
+						});
 					finalizingClipMs.current = 0;
-					setClipFinalizing(false);
+
 					const interruption = pendingNativeMacInterruption.current;
 					pendingNativeMacInterruption.current = null;
 					if (
@@ -2368,13 +2410,20 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
 		if (activeScreenRecorder.state === "paused") {
 			try {
+				if (!lifecycle.transition({ type: "resume" })) return;
+				lifecycle.transition({ type: "resume-dispatched" });
 				activeScreenRecorder.resume();
 				if (activeWebcamRecorder?.state === "paused") {
 					activeWebcamRecorder.resume();
 				}
 				segmentStartedAt.current = Date.now();
-				setPaused(false);
+				lifecycle.transition({ type: "resumed", takeId: recordingId.current });
 			} catch (error) {
+				lifecycle.transition({
+					type: "transport-failed",
+					takeId: recordingId.current,
+					paused: ["paused"].includes(activeScreenRecorder.state),
+				});
 				console.error("Failed to resume recording:", error);
 			}
 			return;
@@ -2388,12 +2437,18 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			accumulatedDurationMs.current = getRecordingDurationMs();
 			segmentStartedAt.current = null;
 			setElapsedSeconds(Math.floor(accumulatedDurationMs.current / 1000));
+			if (!lifecycle.transition({ type: "pause" })) return;
 			activeScreenRecorder.pause();
 			if (activeWebcamRecorder?.state === "recording") {
 				activeWebcamRecorder.pause();
 			}
-			setPaused(true);
+			lifecycle.transition({ type: "paused", takeId: recordingId.current });
 		} catch (error) {
+			lifecycle.transition({
+				type: "transport-failed",
+				takeId: recordingId.current,
+				paused: ["paused"].includes(activeScreenRecorder.state),
+			});
 			console.error("Failed to pause recording:", error);
 		}
 	};
@@ -2444,8 +2499,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	};
 
 	const toggleRecording = () => {
-		if (sourceSelectionInFlight.current && !recording) {
-			idleSourceCancellationRequested.current = true;
+		if (lifecycle.selecting && !recording) {
+			lifecycle.transition({ type: "cancel-selection" });
 			void window.electronAPI.cancelNativeLinuxPrepare().catch((error) => {
 				toast.error(t("recording.startFailed"), { description: ipcErrorMessage(error) });
 			});
@@ -2465,30 +2520,22 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	};
 
 	const restartRecording = async () => {
-		if (restarting.current) return;
+		if (lifecycle.restarting) return;
 
 		if (nativeWindowsRecording.current) {
-			const activeRecordingId = recordingId.current;
-			restarting.current = true;
-			discardRecordingId.current = activeRecordingId;
-			try {
-				await finalizeNativeWindowsRecording(true);
-				await startRecording();
-			} finally {
-				restarting.current = false;
-			}
+			const saved = lifecycle.waitUntilSaved(nativeWindowsRecording.current.recordingId);
+			lifecycle.transition({ type: "request-stop", intent: "restart" });
+
+			await finalizeNativeWindowsRecording(true);
+			await saved;
+			if (lifecycle.getSnapshot().kind === "restarting") await startRecording();
 			return;
 		}
 		if (nativeMacRecording.current) {
-			const activeRecordingId = recordingId.current;
-			restarting.current = true;
-			discardRecordingId.current = activeRecordingId;
-			try {
-				await finalizeNativeMacRecording(true);
-				await startRecording();
-			} finally {
-				restarting.current = false;
-			}
+			lifecycle.transition({ type: "request-stop", intent: "restart" });
+
+			await finalizeNativeMacRecording(true);
+			if (lifecycle.getSnapshot().kind === "restarting") await startRecording();
 			return;
 		}
 
@@ -2496,10 +2543,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		if (!activeScreenRecorder || activeScreenRecorder.recorder.state === "inactive") return;
 
 		const activeWebcamRecorder = webcamRecorder.current;
-		const activeRecordingId = recordingId.current;
+		const saved = lifecycle.waitUntilSaved(recordingId.current);
 
-		restarting.current = true;
-		discardRecordingId.current = activeRecordingId;
+		lifecycle.transition({ type: "request-stop", intent: "restart" });
 
 		const stopPromises = [
 			new Promise<void>((resolve) => {
@@ -2522,12 +2568,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
 		stopRecording.current();
 		await Promise.all(stopPromises);
+		await saved;
 
-		try {
-			await startRecording();
-		} finally {
-			restarting.current = false;
-		}
+		if (lifecycle.getSnapshot().kind === "restarting") await startRecording();
 	};
 
 	useEffect(() => {
@@ -2565,17 +2608,12 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	}, [getRecordingDurationMs, paused, recordedClips, recording, saving]);
 
 	const cancelRecording = () => {
+		if (recording) lifecycle.transition({ type: "request-stop", intent: "discard" });
 		if (nativeWindowsRecording.current) {
-			const activeRecordingId = recordingId.current;
-			discardRecordingId.current = activeRecordingId;
-			allowAutoFinalize.current = false;
 			void finalizeNativeWindowsRecording(true);
 			return;
 		}
 		if (nativeMacRecording.current) {
-			const activeRecordingId = recordingId.current;
-			discardRecordingId.current = activeRecordingId;
-			allowAutoFinalize.current = false;
 			void finalizeNativeMacRecording(true);
 			return;
 		}
@@ -2585,10 +2623,6 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			activeScreenRecorder?.recorder.state === "recording" ||
 			activeScreenRecorder?.recorder.state === "paused"
 		) {
-			const activeRecordingId = recordingId.current;
-			discardRecordingId.current = activeRecordingId;
-			allowAutoFinalize.current = false;
-
 			stopRecording.current();
 			return;
 		}

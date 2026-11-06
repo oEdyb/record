@@ -234,6 +234,8 @@ describe("useScreenRecorder start timing", () => {
 	});
 
 	it.each([
+		["win32", "pause-throw"],
+		["darwin", "resume-throw"],
 		["win32", "data"],
 		["darwin", "data"],
 		["win32", "error"],
@@ -299,6 +301,23 @@ describe("useScreenRecorder start timing", () => {
 		expect(
 			api.traceRecordRequest.mock.calls.some(([event]) => event.stage === "browser-writer-started"),
 		).toBe(false);
+		if (outcome === "pause-throw" || outcome === "resume-throw") {
+			if (outcome === "resume-throw") act(() => view.result.current.togglePaused());
+			const action = vi
+				.spyOn(recorder, outcome === "pause-throw" ? "pause" : "resume")
+				.mockImplementation(() => {
+					throw new Error("transport failed");
+				});
+			act(() => view.result.current.togglePaused());
+			expect(view.result.current.recording).toBe(true);
+			expect(view.result.current.clipFinalizing).toBe(false);
+			action.mockRestore();
+			act(() => view.result.current.toggleRecording());
+			await settle();
+			expect(recorder.state).toBe("inactive");
+			expect(view.result.current.recording).toBe(false);
+			return;
+		}
 		if (outcome !== "data") {
 			recorder.state = "inactive";
 			act(() => recorder.dispatchEvent(new Event(outcome)));
@@ -1069,9 +1088,12 @@ describe("useScreenRecorder native Linux stop failure", () => {
 		expect(view.result.current.clipFinalizing).toBe(true);
 		expect(FakeMediaRecorder.instances[0]?.state).toBe("recording");
 		await pressStop(view);
+		expect(window.electronAPI.stopNativeMacRecording).not.toHaveBeenCalled();
+		expect(FakeMediaRecorder.instances[0]?.state).toBe("recording");
+		await act(async () => finishPause?.({ success: true, paused: true, clip }));
+		await settle();
 		expect(window.electronAPI.switchToEditor).toHaveBeenCalledWith({ compactReview: true });
 		expect(view.result.current.recording).toBe(false);
-		await act(async () => finishPause?.({ success: true, paused: true, clip }));
 	});
 
 	it.each([
@@ -2457,4 +2479,115 @@ it.each(["win32", "darwin", "linux"])("restarts the active native take on %s", a
 	await settle(20);
 	expect(start).toHaveBeenCalledTimes(2);
 	expect(view.result.current.recording).toBe(true);
+});
+
+it.each([
+	"win32",
+	"darwin",
+	"linux",
+])("retains start ownership while cancelled startup cleans up on %s", async (platform) => {
+	let confirm: ((value: { success: boolean; recordingId: number }) => void) | undefined;
+	const start = vi.fn(
+		() =>
+			new Promise<{ success: boolean; recordingId: number }>((resolve) => {
+				confirm = resolve;
+			}),
+	);
+	const stop = vi.fn(async () => ({ success: true, discarded: true }));
+	stubElectronAPI({
+		getPlatform: vi.fn(() => platform),
+		isNativeMacCaptureAvailable: vi.fn(async () => ({ success: true, available: true })),
+		isNativeLinuxCaptureAvailable: vi.fn(async () => ({ success: true, available: true })),
+		prepareNativeLinuxRecording: vi.fn(async () => ({ success: true, recordingId: 7 })),
+		cancelNativeLinuxPrepare: vi.fn(async () => undefined),
+		startNativeWindowsRecording: start,
+		startNativeMacRecording: start,
+		stopNativeWindowsRecording: stop,
+		stopNativeMacRecording: stop,
+	});
+	const view = renderHook(() => useScreenRecorder());
+	let pending: Promise<void> | undefined;
+	act(() => {
+		pending = view.result.current.startRecordingImmediately();
+	});
+	await settle();
+	expect(start).toHaveBeenCalledTimes(1);
+	act(() => view.result.current.cancelRecording());
+	await act(async () => view.result.current.startRecordingImmediately());
+	expect(start).toHaveBeenCalledTimes(1);
+	await act(async () => {
+		confirm?.({ success: true, recordingId: 7 });
+		await pending;
+	});
+	expect(stop).toHaveBeenCalledWith(true);
+	expect(view.result.current.recording).toBe(false);
+	await act(async () => {
+		void view.result.current.startRecordingImmediately();
+	});
+	await settle();
+	expect(start).toHaveBeenCalledTimes(2);
+	await act(async () => {
+		confirm?.({ success: true, recordingId: 8 });
+	});
+	expect(view.result.current.recording).toBe(true);
+});
+
+it("joins a pending Windows discard before Restart starts the replacement", async () => {
+	let finish: ((value: { success: boolean; discarded: boolean }) => void) | undefined;
+	api.stopNativeWindowsRecording.mockImplementationOnce(
+		() =>
+			new Promise((resolve) => {
+				finish = resolve;
+			}),
+	);
+	const view = renderHook(() => useScreenRecorder());
+	await act(async () => view.result.current.startRecordingImmediately());
+	act(() => view.result.current.cancelRecording());
+	await settle();
+	let restart: Promise<unknown> | undefined;
+	act(() => {
+		restart = Promise.resolve(view.result.current.restartRecording());
+	});
+	await settle();
+	expect(api.startNativeWindowsRecording).toHaveBeenCalledTimes(1);
+	await act(async () => {
+		finish?.({ success: true, discarded: true });
+		await restart;
+	});
+	expect(api.startNativeWindowsRecording).toHaveBeenCalledTimes(2);
+	expect(view.result.current.recording).toBe(true);
+});
+
+it.each([
+	"pause",
+	"resume",
+])("queues Windows Stop behind an unacknowledged %s", async (operation) => {
+	const pause = vi.fn(async () => ({ success: true }));
+	const resume = vi.fn(async () => ({ success: true }));
+	stubElectronAPI({ pauseNativeWindowsRecording: pause, resumeNativeWindowsRecording: resume });
+	const view = renderHook(() => useScreenRecorder());
+	await act(async () => view.result.current.startRecordingImmediately());
+	if (operation === "resume") {
+		act(() => view.result.current.togglePaused());
+		await settle();
+	}
+	let acknowledge: ((value: { success: boolean }) => void) | undefined;
+	(operation === "pause" ? pause : resume).mockImplementationOnce(
+		() =>
+			new Promise((resolve) => {
+				acknowledge = resolve;
+			}),
+	);
+	act(() => view.result.current.togglePaused());
+	await settle();
+	act(() => view.result.current.toggleRecording());
+	await settle();
+	expect(api.stopNativeWindowsRecording).not.toHaveBeenCalled();
+	await act(async () => {
+		acknowledge?.({ success: true });
+	});
+	await settle();
+	expect(api.stopNativeWindowsRecording).toHaveBeenCalledTimes(1);
+	expect(api.stopNativeWindowsRecording).toHaveBeenCalledWith(false);
+	expect(view.result.current.recording).toBe(false);
 });

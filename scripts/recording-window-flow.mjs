@@ -8,8 +8,9 @@ import { launchRecordingTestApp, recordingTestTarget } from "./recording-test-ap
 import { exportPrivateTake } from "./recording-test-export.mjs";
 import { acquireRecordingTestLock } from "./recording-test-lock.mjs";
 import { selectedMicrophoneLoss } from "./recording-test-microphone-loss.mjs";
+import { recordingOverlap } from "./recording-test-overlap.mjs";
 
-function verifyClip(clip, { camera = true } = {}) {
+function verifyClip(clip, { camera = true, minimumDuration = 0.1 } = {}) {
 	for (const key of [
 		"screenVideoPath",
 		...(camera ? ["webcamVideoPath"] : []),
@@ -25,7 +26,7 @@ function verifyClip(clip, { camera = true } = {}) {
 		);
 		assert(probe.streams.length > 0);
 		assert(
-			Number(probe.format.duration) >= (clip.durationMs >= 300000 ? 300 : 0.1),
+			Number(probe.format.duration) >= (clip.durationMs >= 300000 ? 300 : minimumDuration),
 			`${key} is short`,
 		);
 		const microphone = key === "microphoneAudioPath";
@@ -60,6 +61,8 @@ assert(
 		[
 			"hung-stop",
 			"pause-stop",
+			"resume-stop",
+			"resume-restart",
 			"mic-unplug",
 			"mic-selected",
 			"crash",
@@ -92,6 +95,7 @@ if (!process.argv.includes("--worker")) {
 				"--",
 				"env",
 				`KLIPPT_WINDOW_TEST_DIR=${run}`,
+				`KLIPPT_OVERLAP_BASELINE=${process.env.KLIPPT_OVERLAP_BASELINE ?? ""}`,
 				`KLIPPT_TEST_EXECUTABLE=${process.env.KLIPPT_TEST_EXECUTABLE ?? ""}`,
 				"node",
 				"scripts/recording-window-niri.mjs",
@@ -107,6 +111,7 @@ if (!process.argv.includes("--worker")) {
 					"--",
 					"env",
 					`KLIPPT_WINDOW_TEST_DIR=${run}`,
+					`KLIPPT_OVERLAP_BASELINE=${process.env.KLIPPT_OVERLAP_BASELINE ?? ""}`,
 					`KLIPPT_TEST_EXECUTABLE=${process.env.KLIPPT_TEST_EXECUTABLE ?? ""}`,
 					...(process.env.KLIPPT_TEST_EXECUTABLE
 						? []
@@ -411,7 +416,7 @@ w.loadURL('data:text/html,'+encodeURIComponent('<title>Private recording fixture
 			console.log("SELECT_PRIVATE_SOURCE");
 			studio.on("console", (m) => console.log("STUDIO", m.type(), m.text()));
 			await studio.getByRole("button", { name: "Record", exact: true }).press("Enter");
-			const snapshot = () => hud.evaluate(() => window.electronAPI.getStudioSnapshot());
+			const snapshot = () => studio.evaluate(() => window.electronAPI.getStudioSnapshot());
 			for (let i = 0; i < 200; i++) {
 				if ((await snapshot())?.phase === "recording") break;
 				await delay(200);
@@ -752,11 +757,8 @@ w.loadURL('data:text/html,'+encodeURIComponent('<title>Private recording fixture
 					process.kill(helper, "SIGSTOP");
 					console.log("FROZEN OWNED HELPER", helper);
 				}
-				if (fault === "pause-stop") {
-					await studio.evaluate(() => {
-						window.electronAPI.studioCommand("pause");
-						window.electronAPI.studioCommand("stop");
-					});
+				if (["pause-stop", "resume-stop", "resume-restart"].includes(fault)) {
+					await recordingOverlap({ app, hud, studio, snapshot, run, fault, verifyClip });
 				} else await studio.getByRole("button", { name: "Stop recording", exact: true }).click();
 				for (let i = 0; i < 300; i++) {
 					if ((await snapshot())?.phase === "review") break;
@@ -770,7 +772,41 @@ w.loadURL('data:text/html,'+encodeURIComponent('<title>Private recording fixture
 					saved.clips.some((c) => c.durationMs >= (fault ? 1000 : 300000)),
 					fault ? "No recovered diagnostic clip" : "No five-minute clip",
 				);
-				for (const clip of saved.clips) verifyClip(clip);
+				for (const clip of saved.clips)
+					verifyClip(clip, {
+						camera:
+							fault !== "resume-stop" ||
+							clip.durationMs >= 500 ||
+							clip.webcamVideoPath !== undefined,
+						minimumDuration: fault === "resume-stop" ? 0 : 0.1,
+					});
+				if (fault === "resume-stop") {
+					const pending = JSON.parse(
+						await readFile(path.join(run, "overlap-pending.json"), "utf8"),
+					);
+					for (const old of pending.prefix)
+						assert(
+							saved.clips.some(
+								(clip) =>
+									clip.screenVideoPath === old.screenVideoPath &&
+									clip.webcamVideoPath === old.webcamVideoPath &&
+									clip.microphoneAudioPath === old.microphoneAudioPath,
+							),
+							"Stop overlap lost committed footage",
+						);
+				}
+
+				if (fault === "pause-stop") {
+					const pending = JSON.parse(
+						await readFile(path.join(run, "overlap-pending.json"), "utf8"),
+					);
+					assert(
+						saved.clips.some(
+							(clip) => clip.index === 0 && clip.durationMs >= pending.expectedLiveMs,
+						),
+						"Pause/Stop lost the pending clip's captured duration",
+					);
+				}
 
 				await studio.getByRole("button", { name: "Play", exact: true }).click();
 				await studio.getByRole("button", { name: "Pause", exact: true }).click();
