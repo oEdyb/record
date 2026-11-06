@@ -1,3 +1,4 @@
+import { LinuxHudLifecycle } from "./linuxHudLifecycle";
 import { cancelPortalHudSelection, supersedePortalHudSelection } from "./portalSelectionHud";
 
 type HudWindow = {
@@ -10,13 +11,7 @@ type HudWindow = {
 };
 
 export class LinuxRecordingHud {
-	private transitioning = false;
-	private pauseRequested = false;
-	private generation = 0;
-	private concealed = false;
-	private operation = 0;
-	private recoveryRequested = false;
-	private retry: ReturnType<typeof setTimeout> | null = null;
+	private readonly lifecycle = new LinuxHudLifecycle();
 
 	constructor(
 		private readonly platform: string,
@@ -34,60 +29,49 @@ export class LinuxRecordingHud {
 		if (this.platform !== "linux") return operation();
 		const previousPlacement = supersedePortalHudSelection(this.getWindow());
 		const shouldHide = this.shouldHide();
-		const generation = this.generation;
-		const operationId = ++this.operation;
-		this.transitioning = true;
-		this.concealed = shouldHide;
-		this.pauseRequested = false;
-		this.recoveryRequested = false;
-		this.clearRetry();
+		const owner = Symbol("capture-privacy");
+		this.lifecycle.transition({ type: "prepare", owner, hide: shouldHide });
+		const assertCurrent = () => {
+			if (!this.lifecycle.transition({ type: "admit", owner }))
+				throw new Error("Recording start cancelled.");
+		};
 		try {
 			if (previousPlacement) await previousPlacement;
-			if (generation !== this.generation || operationId !== this.operation)
-				throw new Error("Recording start cancelled.");
+			assertCurrent();
 			const retained = shouldHide ? await this.windowIsolation?.begin() : true;
-			if (generation !== this.generation || operationId !== this.operation)
-				throw new Error("Recording start cancelled.");
-			this.concealed = !retained;
-			if (!retained) this.conceal();
+			assertCurrent();
+			this.lifecycle.transition({ type: "proof", owner, retained: Boolean(retained) });
+			if (this.lifecycle.concealed) this.conceal();
 			if (shouldHide) {
 				await this.setPreviewHidden(true);
 				await this.waitForUnmap();
 			}
-			if (generation !== this.generation || operationId !== this.operation)
-				throw new Error("Recording start cancelled.");
+			assertCurrent();
 			return await operation();
 		} finally {
-			if (operationId === this.operation) {
-				this.transitioning = false;
+			if (this.lifecycle.transition({ type: "finish", owner })) {
 				if (shouldHide && !this.isCapturing()) this.showControls();
-				else if (this.recoveryRequested) this.requestControls();
+				else if (this.lifecycle.recovering) this.requestControls();
 			}
 		}
 	}
 
 	cancelPending(): void {
-		this.generation += 1;
-		this.clearRetry();
-		this.recoveryRequested = false;
-		this.pauseRequested = false;
+		this.lifecycle.transition({ type: "cancel" });
 		cancelPortalHudSelection(this.getWindow());
 		this.windowIsolation?.end();
 	}
 
 	conceal(): void {
 		if (this.platform !== "linux") return;
-		this.concealed = true;
+		this.lifecycle.transition({ type: "conceal" });
 		const window = this.getWindow();
 		if (window && !window.isDestroyed()) window.hide();
 	}
 
 	dismiss(): void {
-		this.recoveryRequested = false;
-		this.pauseRequested = false;
-		this.clearRetry();
+		this.lifecycle.transition({ type: "dismiss" });
 		this.windowIsolation?.end();
-		this.concealed = true;
 	}
 
 	revoke(): void {
@@ -97,15 +81,13 @@ export class LinuxRecordingHud {
 			this.dismiss();
 			return;
 		}
-		this.recoveryRequested = true;
 		this.conceal();
 		this.requestControls();
 	}
 
 	requestControls(): boolean {
-		if (this.platform !== "linux" || !this.concealed) return false;
-		this.recoveryRequested = true;
-		if (this.transitioning) {
+		if (this.platform !== "linux" || !this.lifecycle.transition({ type: "recover" })) return false;
+		if (this.lifecycle.preparing) {
 			this.scheduleRetry();
 			return true;
 		}
@@ -113,8 +95,7 @@ export class LinuxRecordingHud {
 			this.showControls();
 			return true;
 		}
-		if (!this.pauseRequested) {
-			this.pauseRequested = true;
+		if (!this.lifecycle.pauseSent && this.lifecycle.transition({ type: "pause-sent" })) {
 			const window = this.getWindow();
 			if (window && !window.isDestroyed()) window.webContents.send("hud-toggle-recording-pause");
 		}
@@ -123,34 +104,23 @@ export class LinuxRecordingHud {
 	}
 
 	pauseCompleted(): void {
-		if (this.platform !== "linux" || this.transitioning) return;
-		this.pauseRequested = false;
+		if (this.platform !== "linux" || !this.lifecycle.transition({ type: "ack" })) return;
 		if (!this.isCapturing()) this.showControls();
-		else if (this.recoveryRequested) this.scheduleRetry();
-	}
-
-	private clearRetry(): void {
-		if (this.retry) clearTimeout(this.retry);
-		this.retry = null;
+		else if (this.lifecycle.recovering) this.scheduleRetry();
 	}
 
 	private scheduleRetry(): void {
-		if (this.retry || !this.recoveryRequested) return;
-		this.retry = setTimeout(() => {
-			this.retry = null;
-			if (!this.recoveryRequested) return;
-			this.pauseRequested = false;
-			this.requestControls();
+		if (this.lifecycle.retry || !this.lifecycle.recovering) return;
+		const timer = setTimeout(() => {
+			if (this.lifecycle.transition({ type: "tick", timer })) this.requestControls();
 		}, 500);
-		this.retry.unref?.();
+		if (!this.lifecycle.transition({ type: "schedule", timer })) clearTimeout(timer);
+		timer.unref?.();
 	}
 
 	private showControls(): void {
-		this.clearRetry();
-		this.recoveryRequested = false;
-		this.pauseRequested = false;
+		if (!this.lifecycle.transition({ type: "show", capturing: this.isCapturing() })) return;
 		this.windowIsolation?.end();
-		this.concealed = false;
 		void this.setPreviewHidden(false);
 		if (!this.shouldShowControls()) return;
 		const window = this.getWindow();

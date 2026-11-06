@@ -381,3 +381,34 @@ it("does not mark a safely captured visible pill concealed when cancelling stale
 	expect(hud.requestControls()).toBe(false);
 	expect(window.webContents.send).not.toHaveBeenCalled();
 });
+
+it("retains revocation recovery when a late placement proof reports retained", async () => {
+	const { window } = setup();
+	const proof = deferred<boolean>();
+	let capturing = false;
+	const hud = new LinuxRecordingHud(
+		"linux",
+		() => window,
+		() => capturing,
+		() => true,
+		async () => undefined,
+		undefined,
+		undefined,
+		{ begin: () => proof.promise, end: () => undefined },
+	);
+	const capture = hud.capture(async () => {
+		capturing = true;
+		return { success: true };
+	});
+	await Promise.resolve();
+	hud.revoke();
+	expect(window.webContents.send).not.toHaveBeenCalled();
+	proof.resolve(true);
+	await capture;
+	expect(window.webContents.send).toHaveBeenCalledExactlyOnceWith("hud-toggle-recording-pause");
+	expect(window.show).not.toHaveBeenCalled();
+	capturing = false;
+	hud.pauseCompleted();
+	expect(window.show).toHaveBeenCalledOnce();
+	hud.cancelPending();
+});
