@@ -120,8 +120,8 @@ fn static_source_continue_creates_a_second_readable_clip_after_encoded_ack() {
     clips.resume(&mut emitter).expect("cached resume");
     assert_eq!(
         clips
-            .writer
-            .as_ref()
+            .lifecycle
+            .writer()
             .expect("second writer")
             .encoded_frames(),
         1
@@ -293,13 +293,19 @@ fn first_frame_timeout_is_bounded_and_not_applied_to_static_active_sources() {
     let fixture = Fixture::new();
     let mut clips = Clips::new(fixture.request(), Vec::new(), Some(Backend::Software));
     let mut emitter = Emitter::new(Vec::new(), false);
-    clips.awaiting_since = Some(Instant::now() - Duration::from_secs(9));
+    clips
+        .lifecycle
+        .transition(ClipMove::Connected(Instant::now() - Duration::from_secs(9)))
+        .expect("connection timestamp");
     assert!(clips
         .advance(&mut emitter)
         .unwrap_err()
         .contains("eight seconds"));
     clips.frame(frame(), &mut emitter).expect("valid frame");
-    clips.awaiting_since = Some(Instant::now() - Duration::from_secs(9));
+    clips
+        .lifecycle
+        .transition(ClipMove::Connected(Instant::now() - Duration::from_secs(9)))
+        .expect("connection timestamp");
     clips
         .advance(&mut emitter)
         .expect("static frame remains valid");
@@ -847,4 +853,43 @@ fn assert_full_disk(at_stop: bool) {
         String::from_utf8_lossy(&decoded.stderr)
     );
     eprintln!("ENOSPC: {count} screen frames retained; warning delivered");
+}
+
+#[test]
+fn illegal_continue_keeps_the_live_writer_available_to_stop() {
+    let fixture = Fixture::new();
+    let mut clips = Clips::new(fixture.request(), Vec::new(), Some(Backend::Software));
+    let mut bytes = Vec::new();
+    let mut emitter = Emitter::new(&mut bytes, false);
+    clips
+        .frame(frame(), &mut emitter)
+        .expect("first screen frame");
+    assert!(clips.has_writer());
+    let error = clips
+        .resume(&mut emitter)
+        .expect_err("Continue while writing is illegal");
+    assert!(error.contains("illegal clip transition"));
+    assert!(
+        clips.has_writer(),
+        "rejected Continue must retain the footage owner"
+    );
+    clips.stop(&mut emitter).expect("Stop still finalizes");
+    let events = values(&bytes);
+    let stopped = events
+        .iter()
+        .find(|event| event["event"] == "recording-stopped")
+        .expect("stopped acknowledgement");
+    assert_eq!(stopped["clips"].as_array().expect("clips").len(), 1);
+    let screen = stopped["clips"][0]["screenVideoPath"]
+        .as_str()
+        .expect("screen file");
+    let decoded = std::process::Command::new("ffmpeg")
+        .args(["-v", "error", "-xerror", "-i", screen, "-f", "null", "-"])
+        .output()
+        .expect("decode retained footage");
+    assert!(
+        decoded.status.success(),
+        "{}",
+        String::from_utf8_lossy(&decoded.stderr)
+    );
 }

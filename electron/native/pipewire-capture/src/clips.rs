@@ -8,6 +8,10 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+#[path = "clip_lifecycle.rs"]
+mod lifecycle;
+use lifecycle::{ClipLifecycle, ClipMove, History, Origin};
+
 const FIRST_FRAME_TIMEOUT: Duration = Duration::from_secs(8);
 const SOURCE_TIMEOUT: Duration = Duration::from_secs(2);
 
@@ -24,15 +28,9 @@ pub fn clip_path(requested: &Path, index: usize) -> PathBuf {
 pub struct Clips {
     pub request: Request,
     pub audio: Vec<AudioSource>,
-    writer: Option<Capture>,
+    lifecycle: ClipLifecycle,
     latest: Option<shim::Frame>,
     completed: Vec<RecordingClip>,
-    paused: bool,
-    announced: bool,
-    ever_started: bool,
-    resuming: bool,
-    failure: Option<String>,
-    awaiting_since: Option<Instant>,
     forced: Option<Backend>,
     position: (i32, i32),
     bounds: Option<CaptureBounds>,
@@ -48,15 +46,9 @@ impl Clips {
             request,
             audio,
             forced,
-            writer: None,
+            lifecycle: ClipLifecycle::default(),
             latest: None,
             completed: Vec::new(),
-            paused: false,
-            announced: false,
-            ever_started: false,
-            resuming: false,
-            failure: None,
-            awaiting_since: None,
             position: (0, 0),
             bounds: None,
             crop_warned: false,
@@ -71,18 +63,20 @@ impl Clips {
     }
 
     pub fn fail(&mut self, message: &str) {
-        if self.failure.is_none() {
-            self.failure = Some(message.into());
-        }
+        let _ = self.lifecycle.transition(ClipMove::Fail(message.into()));
     }
-
     pub fn connected_if_waiting(&mut self) {
-        if self.awaiting_since.is_none() && !self.ever_started && !self.paused {
+        if self.lifecycle.awaiting_since().is_none()
+            && !self.lifecycle.started()
+            && !self.lifecycle.paused()
+        {
             self.connected();
         }
     }
     pub fn connected(&mut self) {
-        self.awaiting_since = Some(Instant::now());
+        let _ = self
+            .lifecycle
+            .transition(ClipMove::Connected(Instant::now()));
     }
     pub fn set_position(&mut self, position: Option<(i32, i32)>) {
         self.position = position.unwrap_or((0, 0));
@@ -93,7 +87,7 @@ impl Clips {
         frame: shim::Frame,
         position: Option<(i32, i32)>,
     ) -> Result<(), String> {
-        if !self.canonical() || !self.paused || self.writer.is_some() {
+        if !self.canonical() || !self.lifecycle.paused() || self.lifecycle.writer().is_some() {
             return Err("source selection requires a paused clip-native recording".into());
         }
         if frame.crop.width & !1 < 2 || frame.crop.height & !1 < 2 {
@@ -110,14 +104,14 @@ impl Clips {
         Ok(())
     }
     pub fn is_paused(&self) -> bool {
-        self.paused
+        self.lifecycle.paused()
     }
     /// A clip was confirmed at least once: the take is past startup.
     pub fn has_started(&self) -> bool {
-        self.ever_started
+        self.lifecycle.started()
     }
     pub fn has_writer(&self) -> bool {
-        self.writer.is_some()
+        self.lifecycle.writer().is_some()
     }
 
     pub fn reject_resume<W: Write>(&self, emitter: &mut Emitter<W>, message: String) {
@@ -142,6 +136,7 @@ impl Clips {
         frame: shim::Frame,
         emitter: &mut Emitter<W>,
     ) -> Result<(), String> {
+        self.lifecycle.transition(ClipMove::Frame)?;
         // Portal PTS is in the same stream clock across clips. Never replace a
         // cached frame with an older compositor delivery (negative means unknown).
         if frame.pts_ns >= 0 && self.last_pts_ns.is_some_and(|pts| frame.pts_ns < pts) {
@@ -151,7 +146,7 @@ impl Clips {
             self.last_pts_ns = Some(frame.pts_ns);
         }
         self.latest = Some(frame);
-        if self.paused {
+        if self.lifecycle.paused() {
             return Ok(());
         }
         self.stage_latest(emitter)?;
@@ -165,7 +160,7 @@ impl Clips {
         let Some(requested) = self.request.screen_path() else {
             return Ok(());
         };
-        if self.writer.is_none() {
+        if self.lifecycle.writer().is_none() {
             let width = frame.crop.width & !1;
             let height = frame.crop.height & !1;
             if width < 2 || height < 2 {
@@ -200,12 +195,15 @@ impl Clips {
                 width,
                 height,
             });
-            self.writer = Some(writer);
-            self.announced = false;
+            self.lifecycle
+                .transition(ClipMove::Prepared(Box::new(writer)))?;
             self.crop_warned = false;
             self.reported_originals.clear();
         }
-        let writer = self.writer.as_mut().ok_or("writer was not prepared")?;
+        let writer = self
+            .lifecycle
+            .writer_mut()
+            .ok_or("writer was not prepared")?;
         if writer.crop_diverged(frame) && !self.crop_warned {
             self.crop_warned = true;
             emitter
@@ -221,15 +219,17 @@ impl Clips {
     }
 
     pub fn advance<W: Write>(&mut self, emitter: &mut Emitter<W>) -> Result<(), String> {
-        if self.paused {
+        if self.lifecycle.paused() {
             self.clear_audio();
             return Ok(());
         }
         let canonical = self.canonical();
-        let Some(writer) = &mut self.writer else {
+        let origin = self.lifecycle.origin();
+        let Some(writer) = self.lifecycle.writer_mut() else {
             if self.request.screen_path().is_some()
                 && self
-                    .awaiting_since
+                    .lifecycle
+                    .awaiting_since()
                     .is_some_and(|since| since.elapsed() >= FIRST_FRAME_TIMEOUT)
             {
                 return Err("PipeWire supplied no usable screen frame within eight seconds".into());
@@ -246,10 +246,10 @@ impl Clips {
         if canonical && !writer.sources_ready() && writer.elapsed() >= SOURCE_TIMEOUT {
             return Err("an enabled audio source supplied no samples within two seconds of the screen epoch".into());
         }
-        if !self.announced && writer.ready() {
+        if origin.is_some() && writer.ready() {
             let bounds = self.bounds.clone().ok_or("capture bounds missing")?;
             let started_at_ms = timestamp_ms().saturating_sub(writer.elapsed().as_millis() as u64);
-            if !self.ever_started {
+            if origin.is_some_and(|origin| origin.history() == History::Unstarted) {
                 emitter
                     .emit(&Event::RecordingStarted {
                         started_at_ms,
@@ -257,7 +257,7 @@ impl Clips {
                     })
                     .map_err(|error| error.to_string())?;
             }
-            if self.resuming {
+            if origin.is_some_and(Origin::resumed) {
                 emitter
                     .emit(&Event::RecordingResumed {
                         clip_index: index,
@@ -277,22 +277,19 @@ impl Clips {
                     })
                     .map_err(|error| error.to_string())?;
             }
-            self.announced = true;
-            self.ever_started = true;
-            self.awaiting_since = None;
+            self.lifecycle.transition(ClipMove::Announced)?;
         }
         Ok(())
     }
 
     pub fn pause<W: Write>(&mut self, emitter: &mut Emitter<W>) -> Result<(), String> {
-        if !self.paused {
+        if !self.lifecycle.paused() {
             if self.canonical() {
                 self.finalize(emitter)?;
-            } else if let Some(writer) = &mut self.writer {
+            } else if let Some(writer) = self.lifecycle.writer_mut() {
                 writer.pause();
             }
-            self.paused = true;
-            self.awaiting_since = None;
+            self.lifecycle.transition(ClipMove::Pause)?;
             self.clear_audio();
         }
         emitter
@@ -301,16 +298,11 @@ impl Clips {
     }
 
     pub fn resume<W: Write>(&mut self, emitter: &mut Emitter<W>) -> Result<(), String> {
-        if !self.paused {
-            return Err("resume requires a paused recording".into());
-        }
+        self.lifecycle
+            .transition(ClipMove::Resume(Instant::now()))?;
         self.clear_audio();
-        self.paused = false;
-        self.resuming = true;
-        self.awaiting_since = Some(Instant::now());
-        if let Some(writer) = &mut self.writer {
+        if let Some(writer) = self.lifecycle.writer_mut() {
             writer.resume();
-            self.announced = false;
         }
         // The cached image is valid even when a static source sends no damage.
         self.stage_latest(emitter)?;
@@ -318,7 +310,7 @@ impl Clips {
     }
 
     fn finalize<W: Write>(&mut self, emitter: &mut Emitter<W>) -> Result<(), String> {
-        let Some(mut writer) = self.writer.take() else {
+        let Some(mut writer) = self.lifecycle.transition(ClipMove::TakeWriter)? else {
             return Ok(());
         };
         // Freeze before stdout, encoder catch-up or any file finalization can
@@ -343,12 +335,12 @@ impl Clips {
             self.completed.len(),
             &mut self.reported_originals,
         );
-        let finalized = writer.finish();
+        let finalized = (*writer).finish();
         boundary?;
         starts?;
         let summary = finalized?;
-        if let Some(failure) = &self.failure {
-            return Err(failure.clone());
+        if let Some(failure) = self.lifecycle.failure() {
+            return Err(failure.to_owned());
         }
         if summary.frames == 0 {
             return Err("cannot commit a clip with no encoded screen frames".into());
@@ -398,6 +390,7 @@ impl Clips {
             .emit(&Event::ClipFinalized { clip: clip.clone() })
             .map_err(|error| error.to_string())?;
         self.completed.push(clip);
+        self.lifecycle.transition(ClipMove::Drained)?;
         Ok(())
     }
 
@@ -422,13 +415,14 @@ impl Clips {
                 .emit(&Event::RecordingStopped {
                     screen_path,
                     clips: self.completed.clone(),
-                    warning: self.failure.as_ref().map(|message| RecordingWarning {
+                    warning: self.lifecycle.failure().map(|message| RecordingWarning {
                         code: "final-clip-failed".into(),
-                        message: message.clone(),
+                        message: message.to_owned(),
                     }),
                 })
                 .map_err(|error| error.to_string())?;
         }
+        self.lifecycle.transition(ClipMove::Stop)?;
         finalized
     }
 }
