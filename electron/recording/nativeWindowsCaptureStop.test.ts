@@ -402,3 +402,63 @@ describe("terminateNativeWindowsCapture", () => {
 		expect(helper.killCalls).toBe(1);
 	});
 });
+
+it("rejects and logs a stale close without changing the finalized recording result", async () => {
+	let output = "Recording stopped. Output path: C:\\recordings\\take.mp4";
+	const pending = waitForNativeWindowsCaptureStop({
+		proc: asProc(helper),
+		targetPath: "C:\\recordings\\requested.mp4",
+		readOutput: () => output,
+	});
+	const stale = helper.listeners("close")[0];
+	if (!stale) throw new Error("Missing close callback");
+	helper.exit(0);
+	const saved = await pending;
+	expect(saved).toEqual({ ok: true, screenVideoPath: "C:\\recordings\\take.mp4" });
+	output = "ERROR: late stale failure";
+	const log = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+	Reflect.apply(stale, helper, [1]);
+	expect(log).toHaveBeenCalledWith("[capture-stop-lifecycle] Illegal transition", {
+		operation: "windows-stop",
+		state: "settled",
+		event: "complete",
+	});
+	await vi.advanceTimersByTimeAsync(61000);
+	expect(await pending).toEqual(saved);
+	expect(helper.killCalls).toBe(0);
+	expect(helper.listenerCount("close")).toBe(0);
+	expect(helper.listenerCount("error")).toBe(0);
+});
+
+it("keeps footage finalized during termination and rejects an earlier close callback", async () => {
+	helper.diesOnKill = false;
+	let output = "";
+	const log = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+	const pending = waitForNativeWindowsCaptureStop({
+		proc: asProc(helper),
+		targetPath: "C:\\recordings\\requested.mp4",
+		readOutput: () => output,
+		timeoutMs: 10,
+		killGraceMs: 5,
+		forceKill: async () => {
+			if (!stale) throw new Error("Missing retained close callback");
+			Reflect.apply(stale, helper, [1]);
+			output = "Recording stopped. Output path: C:\\recordings\\finalized.mp4";
+			helper.exit(1);
+		},
+	});
+	const stale = helper.listeners("close")[0];
+	await vi.advanceTimersByTimeAsync(20);
+	await expect(pending).resolves.toEqual({
+		ok: true,
+		screenVideoPath: "C:\\recordings\\finalized.mp4",
+	});
+	expect(log).toHaveBeenCalledWith("[capture-stop-lifecycle] Illegal transition", {
+		operation: "windows-stop",
+		state: "terminating",
+		event: "complete",
+	});
+	expect(helper.listenerCount("close")).toBe(0);
+	expect(helper.listenerCount("error")).toBe(0);
+	expect(vi.getTimerCount()).toBe(0);
+});

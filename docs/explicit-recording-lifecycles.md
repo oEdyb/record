@@ -52,3 +52,9 @@ The native regression deliberately issues illegal Continue on a real software wr
 `RendererRecordingStop` owns one unbound/bound/waiting/acknowledged/failed state. Matching renderer, take ID and token are required for completion. Stale acknowledgement rejects/logs without replacing the current owner. Rebinding fails the old waiter and removes its listeners before the next handoff proceeds. Crash, close, send failure and the shared quit deadline settle the current operation once.
 
 Repeated `wait` calls join the same promise and first deadline, including a duplicate caller whose own signal is already aborted. They cannot overwrite the camera save waiter. Regression tests cover that join and a superseded owner's stale acknowledgement/abort while the next handoff remains live. Existing quit, renderer-crash, source attachment and recorder tests retain the durable handoff behavior.
+
+## Windows Stop client
+
+The main-process Windows Stop client uses `CaptureStopLifecycle`: waiting → terminating → settled, or waiting → settled on a close/error. Grace-period exit waits use the same one-shot state authority. Stale close/error/deadline completions reject/log; the retained original result cannot change. The timeout still allows the helper's own shutdown budget, escalates by exact PID, and re-reads finalized output after termination so a playable file wins over a timeout diagnosis.
+
+Unit regressions cover stale callbacks after settlement and a finalized path reported during forced termination, including listener/timer cleanup. This proves the TypeScript client on Linux. The C++ WGC/D3D/Media Foundation lifecycle is unchanged: this PC's actual `c++ -std=c++20 -fsyntax-only electron/native/wgc-capture/src/main.cpp` check fails on missing `Windows.h`. Native conversion/runtime proof requires a Windows worker.

@@ -1,4 +1,5 @@
 import { type ChildProcessWithoutNullStreams, execFile } from "node:child_process";
+import { CaptureStopLifecycle } from "./captureStopLifecycle";
 
 /**
  * Stopping a native Windows (WGC) recording, as a unit that can be tested.
@@ -141,18 +142,18 @@ function forceKillProcessTree(pid: number) {
 }
 
 function waitForExit(proc: ChildProcessWithoutNullStreams, timeoutMs: number) {
-	if (hasExited(proc)) {
-		return Promise.resolve(true);
-	}
-
+	if (hasExited(proc)) return Promise.resolve(true);
 	return new Promise<boolean>((resolve) => {
-		const settle = (exited: boolean) => {
+		const lifecycle = new CaptureStopLifecycle<boolean>("windows-exit", (exited) => {
 			clearTimeout(timer);
 			proc.off("close", onClose);
 			resolve(exited);
-		};
-		const onClose = () => settle(true);
-		const timer = setTimeout(() => settle(false), timeoutMs);
+		});
+		const onClose = () => lifecycle.transition({ type: "complete", result: true });
+		const timer = setTimeout(
+			() => lifecycle.transition({ type: "complete", result: false }),
+			timeoutMs,
+		);
 		proc.once("close", onClose);
 	});
 }
@@ -251,17 +252,25 @@ export function waitForNativeWindowsCaptureStop(options: {
 	}
 
 	return new Promise<NativeWindowsCaptureStopResult>((resolve) => {
+		const lifecycle = new CaptureStopLifecycle<NativeWindowsCaptureStopResult>(
+			"windows-stop",
+			(result) => {
+				cleanup();
+				resolve(result);
+			},
+		);
 		const onClose = (code: number | null) => {
-			cleanup();
-			resolve(settleFromOutput(code));
+			lifecycle.transition({ type: "complete", result: settleFromOutput(code) });
 		};
 		const onError = (error: Error) => {
-			cleanup();
-			resolve({
-				ok: false,
-				reason: "helper-failed",
-				message: error.message,
-				exited: hasExited(proc),
+			lifecycle.transition({
+				type: "complete",
+				result: {
+					ok: false,
+					reason: "helper-failed",
+					message: error.message,
+					exited: hasExited(proc),
+				},
 			});
 		};
 		const cleanup = () => {
@@ -271,6 +280,7 @@ export function waitForNativeWindowsCaptureStop(options: {
 		};
 
 		const timer = setTimeout(() => {
+			if (!lifecycle.transition({ type: "terminate" })) return;
 			cleanup();
 			void (async () => {
 				let exited = false;
@@ -294,14 +304,20 @@ export function waitForNativeWindowsCaptureStop(options: {
 				// perfectly playable MP4.
 				const stoppedPath = readStoppedPath(readOutput());
 				if (stoppedPath) {
-					resolve({ ok: true, screenVideoPath: stoppedPath });
+					lifecycle.transition({
+						type: "terminated",
+						result: { ok: true, screenVideoPath: stoppedPath },
+					});
 					return;
 				}
-				resolve({
-					ok: false,
-					reason: "stop-timeout",
-					message: "The recorder did not shut down in time.",
-					exited,
+				lifecycle.transition({
+					type: "terminated",
+					result: {
+						ok: false,
+						reason: "stop-timeout",
+						message: "The recorder did not shut down in time.",
+						exited,
+					},
 				});
 			})();
 		}, timeoutMs);
