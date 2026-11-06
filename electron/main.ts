@@ -563,7 +563,7 @@ async function checkForUpdates() {
 		// never update — can only be pointed at the download page. Ask the updater first so the
 		// buttons offered match what this install can actually do.
 		const selfUpdate = await checkForSelfUpdate(getInstallChannel());
-		const canSelfUpdate = selfUpdate.kind === "downloaded";
+		const canSelfUpdate = selfUpdate.kind === "available";
 		if (selfUpdate.kind === "failed") {
 			// A release published before the update feeds existed has no latest*.yml. Not worth a
 			// dialog — the download page below still works — but it must not vanish silently.

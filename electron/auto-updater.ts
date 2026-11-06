@@ -15,6 +15,7 @@ import { ownsItsUpdates } from "./install-channel";
 export type UpdateOutcome =
 	| { kind: "unsupported" }
 	| { kind: "current" }
+	| { kind: "available"; version: string }
 	| { kind: "downloaded"; version: string }
 	| { kind: "failed"; error: Error };
 
@@ -63,7 +64,7 @@ export async function checkForSelfUpdate(channel: InstallChannel): Promise<Updat
 		// null when no feed resolved; equal versions come back with no downloadPromise.
 		const version = result?.updateInfo?.version;
 		if (!version || version === app.getVersion()) return { kind: "current" };
-		return { kind: "downloaded", version };
+		return { kind: "available", version };
 	} catch (error) {
 		// A missing or malformed feed is the expected failure on any release published before
 		// this shipped. The caller falls back to opening the release page, which still works.

@@ -127,9 +127,16 @@ describe("self-update flow", () => {
 	it("surfaces an available version", async () => {
 		mocks.autoUpdater.checkForUpdates.mockResolvedValue({ updateInfo: { version: "1.10.0" } });
 		await expect(checkForSelfUpdate("dmg")).resolves.toEqual({
-			kind: "downloaded",
+			kind: "available",
 			version: "1.10.0",
 		});
+		expect(mocks.autoUpdater.downloadUpdate).not.toHaveBeenCalled();
+	});
+
+	it("reports downloaded only after the requested transfer finishes", async () => {
+		mocks.autoUpdater.downloadUpdate.mockResolvedValue(["/cache/update"]);
+		await expect(downloadSelfUpdate()).resolves.toEqual({ kind: "downloaded", version: "1.9.2" });
+		expect(mocks.autoUpdater.downloadUpdate).toHaveBeenCalledOnce();
 	});
 
 	// A release published before the update feeds existed has no latest*.yml. That must degrade
