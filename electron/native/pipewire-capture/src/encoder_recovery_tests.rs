@@ -320,3 +320,140 @@ fn sigkill_with_healthy_audio_keeps_all_but_the_last_seconds_of_screen() {
     eprintln!("healthy audio: {frames} of 240 screen frames readable after SIGKILL");
     assert!(frames >= KILL_TEST_FPS * 6, "{frames} of 240 screen frames");
 }
+
+#[test]
+fn illegal_encoder_and_mux_moves_preserve_every_completed_track() {
+    let output =
+        std::env::temp_dir().join(format!("klippt-codec-lifecycle-{}.mp4", std::process::id()));
+    let mut video = VideoEncoder::open(
+        VideoParams {
+            width: 160,
+            height: 120,
+            fps: 30,
+            bitrate: 500_000,
+        },
+        Some(Backend::Software),
+        |_, _| {},
+    )
+    .expect("software encoder");
+    let mut audio = AudioEncoder::open(96_000).expect("AAC encoder");
+    let mut muxer = Muxer::create(&output).expect("muxer");
+    let video_track = muxer
+        .add_stream(video.codec_context())
+        .expect("video track");
+    let audio_track = muxer
+        .add_stream(audio.codec_context())
+        .expect("audio track");
+    muxer.write_header().expect("header");
+    assert!(
+        muxer.write_header().is_err(),
+        "duplicate header must reject before libavformat"
+    );
+    assert!(muxer.add_stream(video.codec_context()).is_err());
+    let pixels = [20, 40, 180, 255].repeat(160 * 120);
+    for pts in 0..15 {
+        video
+            .submit(&pixels, 160 * 4, ff::AV_PIX_FMT_BGRA, pts, |packet| {
+                muxer.write(video_track, packet)
+            })
+            .expect("video frame");
+    }
+    audio
+        .push(&vec![0.0; 24_000 * AUDIO_CHANNELS], |packet| {
+            muxer.write(audio_track, packet)
+        })
+        .expect("audio samples");
+    audio
+        .finish(|packet| muxer.write(audio_track, packet))
+        .expect("audio drain");
+    video
+        .finish(|packet| muxer.write(video_track, packet))
+        .expect("video drain");
+    assert!(video.stage(&pixels, 160 * 4, ff::AV_PIX_FMT_BGRA).is_err());
+    assert!(video
+        .encode_staged(15, |_| panic!("finished video emitted a packet"))
+        .is_err());
+    assert!(audio
+        .push(&[0.0; AUDIO_CHANNELS], |_| panic!(
+            "finished audio accepted input"
+        ))
+        .is_err());
+    video
+        .finish(|_| panic!("duplicate video drain emitted a packet"))
+        .expect("idempotent completed drain");
+    audio
+        .finish(|_| panic!("duplicate audio drain emitted a packet"))
+        .expect("idempotent completed drain");
+    muxer.finish().expect("trailer");
+    let probe = std::process::Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-count_frames",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=nb_read_frames",
+            "-of",
+            "default=nokey=1:noprint_wrappers=1",
+        ])
+        .arg(&output)
+        .output()
+        .expect("count all video frames");
+    assert!(
+        probe.status.success(),
+        "{}",
+        String::from_utf8_lossy(&probe.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&probe.stdout).trim(), "15");
+    let tracks = std::process::Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-show_entries",
+            "stream=codec_type",
+            "-of",
+            "csv=p=0",
+        ])
+        .arg(&output)
+        .output()
+        .expect("inspect all tracks");
+    assert!(tracks.status.success());
+    let track_types = String::from_utf8_lossy(&tracks.stdout);
+    assert!(track_types.lines().any(|line| line == "video"));
+    assert!(track_types.lines().any(|line| line == "audio"));
+    let decoded = std::process::Command::new("ffmpeg")
+        .args(["-nostdin", "-v", "error", "-xerror", "-threads", "1", "-i"])
+        .arg(&output)
+        .args(["-map", "0", "-f", "null", "-"])
+        .output()
+        .expect("fully decode both completed tracks");
+    assert!(
+        decoded.status.success(),
+        "{}",
+        String::from_utf8_lossy(&decoded.stderr)
+    );
+    let _ = std::fs::remove_file(output);
+}
+
+#[test]
+fn an_interrupted_aac_drain_can_still_deliver_its_remaining_packets() {
+    let mut audio = AudioEncoder::open(96_000).expect("AAC encoder");
+    audio
+        .push(&vec![0.0; 512 * AUDIO_CHANNELS], |_| Ok(()))
+        .expect("partial audio block");
+    let failed = audio.finish(|_| Err("injected packet sink failure".to_owned()));
+    assert!(failed.is_err());
+    assert!(audio.push(&[0.0; AUDIO_CHANNELS], |_| Ok(())).is_err());
+    let mut retained = 0;
+    audio
+        .finish(|_| {
+            retained += 1;
+            Ok(())
+        })
+        .expect("retry must drain remaining packets");
+    assert!(
+        retained > 0,
+        "a failed drain must not become a falsely completed drain"
+    );
+}

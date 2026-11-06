@@ -32,6 +32,9 @@ mod capture;
 mod clips;
 mod crop_wait;
 mod encoder;
+mod encoder_lifecycle;
+#[cfg(test)]
+mod encoder_ordering_tests;
 mod events;
 mod ffmpeg;
 mod mp4_tail;

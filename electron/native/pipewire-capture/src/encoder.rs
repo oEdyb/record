@@ -19,6 +19,9 @@
 //! that crashes the helper is worse than no probe, so the symbol is checked
 //! before libavutil is ever allowed to touch VA-API.
 
+use crate::encoder_lifecycle::{
+    EncoderAction, EncoderEvent, EncoderLifecycle, MuxEvent, MuxHealth, MuxLifecycle,
+};
 use std::ffi::{CStr, CString};
 use std::path::Path;
 use std::ptr;
@@ -222,8 +225,7 @@ pub struct VideoEncoder {
     packet: *mut ff::AVPacket,
     params: VideoParams,
     stats: EncodeStats,
-    /// Whether `sw_frame` holds a real picture yet.
-    staged: bool,
+    lifecycle: EncoderLifecycle,
     /// What libswscale reported back after `sws_init_context`, not what we asked
     /// for. Requesting threads and silently getting one is indistinguishable
     /// from threading not helping.
@@ -311,7 +313,7 @@ impl VideoEncoder {
                     bitrate: params.bitrate,
                 },
                 stats: EncodeStats::default(),
-                staged: false,
+                lifecycle: EncoderLifecycle::VideoEmpty,
                 sws_threads: 0,
             };
 
@@ -468,6 +470,7 @@ impl VideoEncoder {
         stride: usize,
         src_format: ff::AVPixelFormat,
     ) -> Result<(), String> {
+        self.lifecycle.transition(EncoderEvent::StageInput)?;
         // The LAST row needs only its own pixels, not a further stride's worth of
         // padding. Demanding `stride * height` rejected exactly the frames a
         // window crop produces: `pixels` there starts partway into the buffer, so
@@ -517,7 +520,7 @@ impl VideoEncoder {
             if scaled < 0 {
                 return Err(format!("sws_scale: {}", ff::err_to_string(scaled)));
             }
-            self.staged = true;
+            self.lifecycle.transition(EncoderEvent::FrameStaged)?;
         }
         Ok(())
     }
@@ -526,7 +529,7 @@ impl VideoEncoder {
     /// that there is nothing to encode and [`Self::encode_staged`] would emit a
     /// frame of uninitialised memory.
     pub fn has_staged_frame(&self) -> bool {
-        self.staged
+        self.lifecycle.has_staged_frame()
     }
 
     /// Encodes whatever is currently staged at `pts` (a frame index).
@@ -538,10 +541,8 @@ impl VideoEncoder {
         pts: i64,
         mut on_packet: impl FnMut(*mut ff::AVPacket) -> Result<(), String>,
     ) -> Result<(), String> {
-        if !self.staged {
-            return Err("encode_staged called before any frame was staged".to_owned());
-        }
-        // SAFETY: `staged` is only set after a successful sws_scale into
+        self.lifecycle.transition(EncoderEvent::VideoInput)?;
+        // SAFETY: staging succeeds only after a successful sws_scale into
         // `sw_frame`, and every pointer below is owned by `self`.
         unsafe {
             let upload_started = std::time::Instant::now();
@@ -598,6 +599,22 @@ impl VideoEncoder {
 
     /// Flushes the encoder. Call once, at stop.
     pub fn finish(
+        &mut self,
+        on_packet: impl FnMut(*mut ff::AVPacket) -> Result<(), String>,
+    ) -> Result<(), String> {
+        if self.lifecycle.transition(EncoderEvent::BeginDrain)? == EncoderAction::AlreadyFinished {
+            return Ok(());
+        }
+        let result = self.finish_inner(on_packet);
+        self.lifecycle.transition(if result.is_ok() {
+            EncoderEvent::DrainSucceeded
+        } else {
+            EncoderEvent::DrainFailed
+        })?;
+        result
+    }
+
+    fn finish_inner(
         &mut self,
         mut on_packet: impl FnMut(*mut ff::AVPacket) -> Result<(), String>,
     ) -> Result<(), String> {
@@ -784,6 +801,7 @@ pub struct AudioEncoder {
     /// Presentation time of the next block, counted in samples — which is
     /// exactly the codec's time base, so no rounding accumulates.
     next_pts: i64,
+    lifecycle: EncoderLifecycle,
 }
 
 impl AudioEncoder {
@@ -806,6 +824,7 @@ impl AudioEncoder {
                 pending: Vec::new(),
                 block: 0,
                 next_pts: 0,
+                lifecycle: EncoderLifecycle::AudioOpen,
             };
 
             // AAC accepts planar float. C owns its channel-layout and context fields.
@@ -857,6 +876,7 @@ impl AudioEncoder {
         interleaved: &[f32],
         mut on_packet: impl FnMut(*mut ff::AVPacket) -> Result<(), String>,
     ) -> Result<(), String> {
+        self.lifecycle.transition(EncoderEvent::AudioInput)?;
         self.pending.extend_from_slice(interleaved);
         let per_block = self.block * AUDIO_CHANNELS;
         while self.pending.len() >= per_block {
@@ -896,6 +916,22 @@ impl AudioEncoder {
 
     /// Pads any partial block with silence, encodes it, and flushes.
     pub fn finish(
+        &mut self,
+        on_packet: impl FnMut(*mut ff::AVPacket) -> Result<(), String>,
+    ) -> Result<(), String> {
+        if self.lifecycle.transition(EncoderEvent::BeginDrain)? == EncoderAction::AlreadyFinished {
+            return Ok(());
+        }
+        let result = self.finish_inner(on_packet);
+        self.lifecycle.transition(if result.is_ok() {
+            EncoderEvent::DrainSucceeded
+        } else {
+            EncoderEvent::DrainFailed
+        })?;
+        result
+    }
+
+    fn finish_inner(
         &mut self,
         mut on_packet: impl FnMut(*mut ff::AVPacket) -> Result<(), String>,
     ) -> Result<(), String> {
@@ -986,9 +1022,8 @@ struct MuxTrack {
 pub struct Muxer {
     fmt: *mut ff::AVFormatContext,
     tracks: Vec<MuxTrack>,
-    header_written: bool,
+    lifecycle: MuxLifecycle,
     output_path: std::path::PathBuf,
-    write_failed: bool,
 }
 
 impl Muxer {
@@ -1018,9 +1053,8 @@ impl Muxer {
             let muxer = Self {
                 fmt,
                 tracks: Vec::new(),
-                header_written: false,
+                lifecycle: MuxLifecycle::Allocated,
                 output_path: path.to_path_buf(),
-                write_failed: false,
             };
 
             let opened = ff::osc_format_open_io(fmt, path_c.as_ptr());
@@ -1039,9 +1073,7 @@ impl Muxer {
     /// Adds a track fed by `codec_ctx`. Every track must be added before
     /// [`Self::write_header`]: MP4 fixes its track list in the header.
     pub fn add_stream(&mut self, codec_ctx: *mut ff::AVCodecContext) -> Result<TrackId, String> {
-        if self.header_written {
-            return Err("a stream cannot be added after the header is written".to_owned());
-        }
+        self.lifecycle.transition(MuxEvent::StreamInput)?;
         // SAFETY: `codec_ctx` is an opened context owned by the caller, and
         // `fmt` is ours.
         unsafe {
@@ -1064,14 +1096,13 @@ impl Muxer {
                 // Filled in by write_header, which is free to change it.
                 stream_time_base: source_time_base,
             });
+            self.lifecycle.transition(MuxEvent::StreamAdded)?;
             Ok(TrackId(self.tracks.len() - 1))
         }
     }
 
     pub fn write_header(&mut self) -> Result<(), String> {
-        if self.tracks.is_empty() {
-            return Err("the output has no streams".to_owned());
-        }
+        self.lifecycle.transition(MuxEvent::HeaderInput)?;
         // SAFETY: `fmt` is ours and every stream was added through add_stream.
         unsafe {
             let mut options = ptr::null_mut();
@@ -1101,7 +1132,7 @@ impl Muxer {
                     ff::err_to_string(header)
                 ));
             }
-            self.header_written = true;
+            self.lifecycle.transition(MuxEvent::HeaderWritten)?;
             // libavformat may have rewritten a stream's time base while writing
             // the header (MP4 prefers 1/90000-style bases for video and the
             // sample rate for audio). Everything after this must rescale into
@@ -1120,6 +1151,7 @@ impl Muxer {
         let Some(track) = self.tracks.get(track.0) else {
             return Err("packet written to a track that was never added".to_owned());
         };
+        self.lifecycle.transition(MuxEvent::PacketInput)?;
         // SAFETY: `packet` comes from the encoder this track was added for, and
         // is valid until the caller unrefs it.
         unsafe {
@@ -1127,7 +1159,7 @@ impl Muxer {
             ff::av_packet_rescale_ts(packet, track.source_time_base, track.stream_time_base);
             let written = ff::av_interleaved_write_frame(self.fmt, packet);
             if written < 0 {
-                self.write_failed = true;
+                self.lifecycle.transition(MuxEvent::WriteFailed)?;
                 return Err(format!(
                     "av_interleaved_write_frame: {}",
                     ff::err_to_string(written)
@@ -1140,20 +1172,19 @@ impl Muxer {
     /// Writes the trailer and closes the file. Consuming `self` makes it a
     /// compile error to write another packet afterwards.
     pub fn finish(mut self) -> Result<(), String> {
-        // SAFETY: `fmt` is valid and the header was written, which is what
-        // av_write_trailer requires.
+        self.lifecycle.transition(MuxEvent::FinishInput)?;
+        // SAFETY: the transition requires a live output with its header written.
         unsafe {
             let written = ff::av_write_trailer(self.fmt);
-            self.header_written = false;
-            // A buffered write can fail only when the file is closed. Stop must
-            // report that failure rather than commit a silently truncated clip.
+            self.lifecycle
+                .transition(MuxEvent::TrailerFinished(MuxHealth::from_result(written)))?;
             let closed = ff::osc_format_close_io(self.fmt);
+            self.lifecycle
+                .transition(MuxEvent::IoClosed(MuxHealth::from_result(closed)))?;
             if closed < 0 {
-                self.write_failed = true;
                 return Err(format!("closing recording: {}", ff::err_to_string(closed)));
             }
             if written < 0 {
-                self.write_failed = true;
                 return Err(format!("av_write_trailer: {}", ff::err_to_string(written)));
             }
         }
@@ -1163,23 +1194,25 @@ impl Muxer {
 
 impl Drop for Muxer {
     fn drop(&mut self) {
-        // SAFETY: `fmt` is either null or ours. `header_written` is still true
-        // only on the error path — `finish` clears it — and a file left without
-        // its trailer would be unplayable, so write one on the way out.
+        // SAFETY: the format context remains ours until this destructor frees it.
         unsafe {
             if self.fmt.is_null() {
                 return;
             }
-            if self.header_written {
-                ff::av_write_trailer(self.fmt);
+            if self.lifecycle.needs_trailer() {
+                let written = ff::av_write_trailer(self.fmt);
+                let _ = self
+                    .lifecycle
+                    .transition(MuxEvent::TrailerFinished(MuxHealth::from_result(written)));
             }
-            if ff::osc_format_close_io(self.fmt) < 0 {
-                self.write_failed = true;
-            }
+            let closed = ff::osc_format_close_io(self.fmt);
+            let _ = self
+                .lifecycle
+                .transition(MuxEvent::IoClosed(MuxHealth::from_result(closed)));
             ff::avformat_free_context(self.fmt);
             self.fmt = ptr::null_mut();
         }
-        if self.write_failed {
+        if self.lifecycle.needs_repair() {
             if let Err(error) = crate::mp4_tail::retain_complete_fragments(&self.output_path) {
                 eprintln!("could not retain complete MP4 fragments: {error}");
             }
