@@ -173,6 +173,20 @@ describe("Studio phase controls", () => {
 		expect(command).toHaveBeenCalledWith("resume");
 		expect(screen.getByRole("button", { name: "peek.play" })).toBeDisabled();
 	});
+	it("releases replay and controls together after an unanswered resume times out", async () => {
+		mount(snapshot("paused"));
+		const resume = await screen.findByRole("button", { name: "tooltips.resumeRecording" });
+		vi.useFakeTimers();
+		try {
+			fireEvent.click(resume);
+			expect(screen.getByRole("button", { name: "peek.play" })).toBeDisabled();
+			act(() => vi.advanceTimersByTime(5001));
+			expect(resume).not.toBeDisabled();
+			expect(screen.getByRole("button", { name: "peek.play" })).not.toBeDisabled();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
 	it("keeps Pause and Stop live while the pill locks setup during capture", async () => {
 		const value = snapshot("recording");
 		value.pill.controlsLocked = true;

@@ -1,4 +1,12 @@
-import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+	type CSSProperties,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+	useSyncExternalStore,
+} from "react";
 import { toast } from "sonner";
 import { InspectorSwitch } from "@/components/ui/inspector";
 import { useScopedT } from "@/contexts/I18nContext";
@@ -22,6 +30,7 @@ import { StudioDevices, StudioSetup, setupLocked } from "./StudioSetup";
 import { StudioTranscript } from "./StudioTranscript";
 import { StudioTransport } from "./StudioTransport";
 import styles from "./StudioWindow.module.css";
+import { StudioCommandStateStore } from "./studioCommandState";
 import { dockFraction } from "./studioLayout";
 import { preserveStudioReader } from "./studioReaderAnchor";
 import { buildStudioSections } from "./studioTranscriptModel";
@@ -49,8 +58,12 @@ export function StudioWindow() {
 			}),
 		[],
 	);
-	const [pending, setPending] = useState(false);
-	const [resumeAsked, setResumeAsked] = useState(false);
+	const [commands] = useState(() => new StudioCommandStateStore());
+	const commandState = useSyncExternalStore(commands.subscribe, commands.getSnapshot);
+	const pending = commandState.kind === "pending";
+	const resumeAsked =
+		commandState.kind === "pending" &&
+		(commandState.command === "resume" || commandState.command === "record");
 	const [playheadSec, setPlayheadSec] = useState(0);
 	const [seekRequest, setSeekRequest] = useState<StudioSeekRequest | null>(null);
 	const nonce = useRef(0);
@@ -74,47 +87,50 @@ export function StudioWindow() {
 		window.addEventListener("resize", resize);
 		return () => window.removeEventListener("resize", resize);
 	}, []);
-	// biome-ignore lint/correctness/useExhaustiveDependencies: a snapshot acknowledges the command
 	useEffect(() => {
-		setPending(false);
-		setResumeAsked(false);
-	}, [snapshot]);
+		if (snapshot) commands.transition({ type: "snapshot" });
+	}, [commands, snapshot]);
 	useEffect(() => {
-		if (!pending) return;
-		const timer = setTimeout(() => setPending(false), COMMAND_TIMEOUT_MS);
+		if (commandState.kind !== "pending") return;
+		const timer = setTimeout(
+			() => commands.transition({ type: "settle", token: commandState.token }),
+			COMMAND_TIMEOUT_MS,
+		);
 		return () => clearTimeout(timer);
-	}, [pending]);
+	}, [commands, commandState]);
 	useEffect(
 		() =>
 			window.electronAPI.onStudioRecordResult?.((result) => {
 				if (!result.success) {
-					setPending(false);
-					setResumeAsked(false);
+					const current = commands.getSnapshot();
+					if (current.kind === "pending" && current.command === "record") {
+						commands.transition({ type: "settle", token: current.token });
+					}
 					toast.error(result.error);
 				}
 			}),
-		[],
+		[commands],
 	);
-	const send = useCallback((command: StudioCommand) => {
-		if (command !== "pill" && command !== "open-notes") setPending(true);
-		if (command === "resume" || command === "record") {
-			setResumeAsked(true);
-			setSeekRequest(null);
-		}
-		void Promise.resolve(window.electronAPI.studioCommand(command))
-			.then((result) => {
-				if (result && !result.success) {
-					setPending(false);
-					setResumeAsked(false);
-					toast.error(result.error);
-				}
-			})
-			.catch(() => {
-				setPending(false);
-				setResumeAsked(false);
-				toast.error("Recording controls did not respond. Reopen Klippt and try again.");
-			});
-	}, []);
+	const send = useCallback(
+		(command: StudioCommand) => {
+			const token = Symbol("studio-command");
+			const tracked = command !== "pill" && command !== "open-notes";
+			if (tracked && !commands.transition({ type: "send", command, token })) return;
+			if (command === "resume" || command === "record") setSeekRequest(null);
+			void Promise.resolve(window.electronAPI.studioCommand(command))
+				.then((result) => {
+					if (result && !result.success) {
+						if (tracked) commands.transition({ type: "settle", token });
+						toast.error(result.error);
+					}
+				})
+				.catch(() => {
+					if (tracked) commands.transition({ type: "settle", token });
+					toast.error("Recording controls did not respond. Reopen Klippt and try again.");
+				});
+		},
+		[commands],
+	);
 	const seek = (takeSec: number, play = false) =>
 		setSeekRequest({
 			takeSec: Math.min((snapshot?.committedMs ?? 0) / 1000, Math.max(0, takeSec)),
