@@ -65,6 +65,10 @@ import {
 	isTrustedPermissionCheck,
 	isTrustedPermissionRequest,
 } from "./ipc/trustedRendererIpc";
+import { EditorCloseLifecycle } from "./lifecycle/editorCloseLifecycle";
+import { RendererRecoveryLifecycle } from "./lifecycle/rendererRecoveryLifecycle";
+import { ReviewHandoffLifecycle } from "./lifecycle/reviewHandoffLifecycle";
+import { WorkspaceLifecycle } from "./lifecycle/workspaceLifecycle";
 import { installKlipptProtocol } from "./localMediaProtocol";
 import { installMainProcessErrorGuards } from "./main-process-errors";
 import { resolveFfmpeg } from "./media/audioPeaks";
@@ -175,8 +179,10 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
 	: RENDERER_DIST;
 
 // Window references
-let mainWindow: BrowserWindow | null = null;
-const readyEditorWindows = new WeakSet<BrowserWindow>();
+const workspace = new WorkspaceLifecycle<BrowserWindow>();
+const editorClose = new EditorCloseLifecycle<BrowserWindow>();
+const reviewTransfer = new ReviewHandoffLifecycle<BrowserWindow>();
+const rendererRecovery = new RendererRecoveryLifecycle<BrowserWindow>();
 let sourceSelectorWindow: BrowserWindow | null = null;
 let countdownOverlayWindow: BrowserWindow | null = null;
 let notesWindow: BrowserWindow | null = null;
@@ -198,25 +204,32 @@ const defaultTrayIcon = isMac
 if (isMac) defaultTrayIcon.setTemplateImage(true);
 const recordingTrayIcon = getTrayIcon("rec-button.png", trayIconSize);
 
+function adoptMainWindow(window: BrowserWindow) {
+	const firstOwnership = !workspace.wasMain(window);
+	workspace.transition({ type: "main", window });
+	if (firstOwnership) window.once("closed", () => workspace.transition({ type: "closed", window }));
+}
+
 function createWindow() {
-	if (mainWindow && !mainWindow.isDestroyed()) {
+	if (workspace.mainWindow && !workspace.mainWindow.isDestroyed()) {
 		return;
 	}
 
-	mainWindow = createHudOverlayWindow();
-	quitCaptureGuard.protectWindow(mainWindow);
+	const window = createHudOverlayWindow();
+	adoptMainWindow(window);
+	quitCaptureGuard.protectWindow(window);
 	if (isMac || process.platform === "linux") createCameraPreviewWindow();
 }
 
 function showMainWindow() {
 	if (requestLinuxRecordingControls()) return;
-	if (mainWindow && !mainWindow.isDestroyed()) {
-		if (mainWindow.isMinimized()) {
-			mainWindow.restore();
+	if (workspace.mainWindow && !workspace.mainWindow.isDestroyed()) {
+		if (workspace.mainWindow.isMinimized()) {
+			workspace.mainWindow.restore();
 		}
-		mainWindow.show();
-		mainWindow.focus();
-		if (mainWindow.webContents.getURL().includes("windowType=hud-overlay"))
+		workspace.mainWindow.show();
+		workspace.mainWindow.focus();
+		if (workspace.mainWindow.webContents.getURL().includes("windowType=hud-overlay"))
 			void activateNiriHud(process.pid).catch((error: unknown) =>
 				console.warn("[hud] activation failed:", error),
 			);
@@ -239,7 +252,7 @@ if (cliCommand) {
 			return;
 		}
 		if (argv.includes("--recorder-stop")) {
-			mainWindow?.webContents.send("stop-recording-from-tray");
+			workspace.mainWindow?.webContents.send("stop-recording-from-tray");
 			return;
 		}
 		showMainWindow();
@@ -255,7 +268,7 @@ function isEditorWindow(window: BrowserWindow) {
 function sendEditorMenuAction(
 	channel: "menu-load-project" | "menu-save-project" | "menu-save-project-as" | "menu-new-project",
 ) {
-	let targetWindow = BrowserWindow.getFocusedWindow() ?? mainWindow;
+	let targetWindow = BrowserWindow.getFocusedWindow() ?? workspace.mainWindow;
 	if (
 		!canDispatchRecordingReviewMenu(channel, {
 			recordingOnly: PRODUCT_SURFACE.recordingOnly,
@@ -269,10 +282,10 @@ function sendEditorMenuAction(
 
 	if (!targetWindow || targetWindow.isDestroyed() || !isEditorWindow(targetWindow)) {
 		createEditorWindowWrapper();
-		targetWindow = mainWindow;
+		targetWindow = workspace.mainWindow;
 		if (!targetWindow || targetWindow.isDestroyed()) return;
 
-		if (!readyEditorWindows.has(targetWindow)) {
+		if (!workspace.isReady(targetWindow)) {
 			targetWindow.webContents.once("did-finish-load", () => {
 				if (!targetWindow || targetWindow.isDestroyed()) return;
 				targetWindow.webContents.send(channel);
@@ -478,8 +491,8 @@ function getInstallChannel(): InstallChannel {
 let isRecording = false;
 
 function toggleRecordingPauseFromShortcut() {
-	if (!mainWindow || mainWindow.isDestroyed()) return;
-	mainWindow.webContents.send("hud-toggle-recording-pause");
+	if (!workspace.mainWindow || workspace.mainWindow.isDestroyed()) return;
+	workspace.mainWindow.webContents.send("hud-toggle-recording-pause");
 }
 
 const globalShortcutHandlers = {
@@ -624,8 +637,8 @@ function updateTrayMenu(recording: boolean = false) {
 				{
 					label: mainT("common", "actions.stopRecording") || "Stop Recording",
 					click: () => {
-						if (mainWindow && !mainWindow.isDestroyed()) {
-							mainWindow.webContents.send("stop-recording-from-tray");
+						if (workspace.mainWindow && !workspace.mainWindow.isDestroyed()) {
+							workspace.mainWindow.webContents.send("stop-recording-from-tray");
 						}
 					},
 				},
@@ -635,8 +648,8 @@ function updateTrayMenu(recording: boolean = false) {
 					label: mainT("common", "actions.startRecording"),
 					click: () => {
 						showMainWindow();
-						if (mainWindow && !mainWindow.isDestroyed()) {
-							mainWindow.webContents.send("hud-start-recording");
+						if (workspace.mainWindow && !workspace.mainWindow.isDestroyed()) {
+							workspace.mainWindow.webContents.send("hud-start-recording");
 						}
 					},
 				},
@@ -677,14 +690,13 @@ function updateTrayMenu(recording: boolean = false) {
 	tray.setContextMenu(Menu.buildFromTemplate(menuTemplate));
 }
 
-let editorHasUnsavedChanges = false;
-let isForceClosing = false;
-let isCloseConfirmInFlight = false;
-let workspaceTransition: { target: "editor" | "hud"; window: BrowserWindow } | null = null;
-let editorWindow: BrowserWindow | null = null;
-
-ipcMain.on("set-has-unsaved-changes", (_, hasChanges: boolean) => {
-	editorHasUnsavedChanges = hasChanges;
+ipcMain.on("set-has-unsaved-changes", (event, hasChanges: boolean) => {
+	const window = BrowserWindow.fromWebContents(event.sender);
+	if (!window || !workspace.ownsEditor(window) || typeof hasChanges !== "boolean") {
+		console.warn("[editor-close] Illegal dirty-state owner");
+		return;
+	}
+	editorClose.transition({ type: "dirty", window, dirty: hasChanges });
 });
 
 // Quit requested from the editor's in-app File menu. Mirrors the native
@@ -696,17 +708,40 @@ ipcMain.on("app-quit", () => {
 function forceCloseEditorWindow(windowToClose: BrowserWindow | null) {
 	if (!windowToClose || windowToClose.isDestroyed()) return;
 
-	isForceClosing = true;
+	editorClose.transition({ type: "force", window: windowToClose });
 	setImmediate(() => {
 		try {
 			if (!windowToClose.isDestroyed()) {
 				windowToClose.close();
 			}
 		} finally {
-			isForceClosing = false;
+			if (!windowToClose.isDestroyed())
+				editorClose.transition({ type: "force-returned", window: windowToClose });
 		}
 	});
 }
+
+ipcMain.on("close-confirm-response", (event, choice: "save" | "discard" | "cancel") => {
+	const window = BrowserWindow.fromWebContents(event.sender);
+	if (!window || window.isDestroyed()) return;
+	if (!["save", "discard", "cancel"].includes(choice)) {
+		console.warn("[editor-close] Illegal close choice", choice);
+		return;
+	}
+	if (!editorClose.transition({ type: "choice", window, choice })) return;
+	if (choice === "save") window.webContents.send("request-save-before-close");
+	else if (choice === "discard") forceCloseEditorWindow(window);
+});
+ipcMain.on("save-before-close-done", (event, shouldClose: boolean) => {
+	const window = BrowserWindow.fromWebContents(event.sender);
+	if (!window || window.isDestroyed()) return;
+	if (typeof shouldClose !== "boolean") {
+		console.warn("[editor-close] Illegal save acknowledgement");
+		return;
+	}
+	if (editorClose.transition({ type: "save-finished", window, shouldClose }) && shouldClose)
+		forceCloseEditorWindow(window);
+});
 
 /** Where a finished recording's small review player opens: the recorder's display. */
 function compactReviewBoundsNear(window: BrowserWindow | null) {
@@ -723,22 +758,22 @@ function compactReviewBoundsNear(window: BrowserWindow | null) {
 	);
 }
 
-const compactReviewWindows = new WeakSet<BrowserWindow>();
-/** A review that took the Studio's place keeps the Studio's frame instead of shrinking to fit. */
-const reviewsInStudioFrame = new WeakSet<BrowserWindow>();
-let reviewHandoffSequence = 0;
-let reviewHandoff: { token: number; window: BrowserWindow | null; ready: () => void } | null = null;
 ipcMain.handle("review-handoff-token", (event) =>
-	reviewHandoff?.window?.webContents === event.sender ? reviewHandoff.token : null,
+	reviewTransfer.pending?.window?.webContents === event.sender
+		? reviewTransfer.pending.token
+		: null,
 );
 ipcMain.on("review-ready", (event, token: unknown) => {
-	if (reviewHandoff?.window?.webContents !== event.sender || token !== reviewHandoff?.token) return;
+	if (
+		reviewTransfer.pending?.window?.webContents !== event.sender ||
+		token !== reviewTransfer.pending?.token
+	)
+		return;
 	revealStudioReview();
 });
 function revealStudioReview() {
-	const handoff = reviewHandoff;
-	if (!handoff) return;
-	reviewHandoff = null;
+	const handoff = reviewTransfer.pending;
+	if (!handoff || !reviewTransfer.transition({ type: "reveal", token: handoff.token })) return;
 	if (handoff.window && !handoff.window.isDestroyed()) {
 		handoff.window.webContents.setBackgroundThrottling(true);
 		handoff.window.show();
@@ -749,8 +784,8 @@ function revealStudioReview() {
 
 /** Tells review whether it is the small player, so Expand appears only then. */
 function setReviewWindowCompact(window: BrowserWindow, compact: boolean) {
-	if (compact) compactReviewWindows.add(window);
-	else compactReviewWindows.delete(window);
+	if (compact) workspace.transition({ type: "compact", window: window, compact: true });
+	else workspace.transition({ type: "compact", window: window, compact: false });
 	if (!window.isDestroyed()) window.webContents.send("review-window-compact-changed", compact);
 }
 
@@ -760,9 +795,9 @@ ipcMain.handle(
 	"fit-review-window",
 	(event, request: { aspectRatio?: number; chromeHeight?: number }) => {
 		const window = BrowserWindow.fromWebContents(event.sender);
-		if (!window || window.isDestroyed() || !compactReviewWindows.has(window)) return false;
+		if (!window || window.isDestroyed() || !workspace.isCompact(window)) return false;
 		if (window.isFullScreen() || window.isMaximized()) return false;
-		if (reviewsInStudioFrame.has(window)) return false;
+		if (workspace.isStudioFrame(window)) return false;
 		const current = window.getBounds();
 		const display = screen.getDisplayMatching(current);
 		// A visible player eases into its new shape instead of jumping.
@@ -781,76 +816,98 @@ ipcMain.handle(
 
 ipcMain.handle("is-review-window-compact", (event) => {
 	const window = BrowserWindow.fromWebContents(event.sender);
-	return Boolean(window && compactReviewWindows.has(window));
+	return Boolean(window && workspace.isCompact(window));
 });
 
 function createEditorWindowWrapper(
 	options: { compactReview?: boolean; bounds?: Electron.Rectangle } = {},
 ) {
-	if (workspaceTransition?.target === "editor" && !workspaceTransition.window.isDestroyed()) {
-		if (reviewHandoff) {
-			reviewHandoff.window = workspaceTransition.window;
-			reviewHandoff.window.webContents.setBackgroundThrottling(false);
+	if (
+		workspace.pendingSwitch?.target === "editor" &&
+		!workspace.pendingSwitch.window.isDestroyed()
+	) {
+		if (reviewTransfer.pending) {
+			reviewTransfer.transition({ type: "bind", window: workspace.pendingSwitch.window });
+			reviewTransfer.pending?.window?.webContents.setBackgroundThrottling(false);
 		}
 		return;
 	}
 	const compactBounds = options.compactReview
-		? (options.bounds ?? compactReviewBoundsNear(mainWindow))
+		? (options.bounds ?? compactReviewBoundsNear(workspace.mainWindow))
 		: undefined;
-	if (editorWindow && !editorWindow.isDestroyed()) {
-		const previousWindow = mainWindow;
-		mainWindow = editorWindow;
-		if (options.bounds) reviewsInStudioFrame.add(editorWindow);
-		else reviewsInStudioFrame.delete(editorWindow);
+	if (workspace.editorWindow && !workspace.editorWindow.isDestroyed()) {
+		const previousWindow = workspace.mainWindow;
+		adoptMainWindow(workspace.editorWindow);
+		if (options.bounds)
+			workspace.transition({ type: "studio-frame", window: workspace.editorWindow, studio: true });
+		else
+			workspace.transition({ type: "studio-frame", window: workspace.editorWindow, studio: false });
 		// A review the user put in native fullscreen stays there.
-		if (compactBounds && !editorWindow.isFullScreen()) {
-			if (editorWindow.isMaximized()) editorWindow.unmaximize();
-			editorWindow.setMinimumSize(COMPACT_REVIEW_MIN_SIZE.width, COMPACT_REVIEW_MIN_SIZE.height);
-			editorWindow.setBounds(compactBounds);
-			setReviewWindowCompact(editorWindow, true);
-		} else if (!compactBounds && compactReviewWindows.has(editorWindow)) {
+		if (compactBounds && !workspace.editorWindow.isFullScreen()) {
+			if (workspace.editorWindow.isMaximized()) workspace.editorWindow.unmaximize();
+			workspace.editorWindow.setMinimumSize(
+				COMPACT_REVIEW_MIN_SIZE.width,
+				COMPACT_REVIEW_MIN_SIZE.height,
+			);
+			workspace.editorWindow.setBounds(compactBounds);
+			setReviewWindowCompact(workspace.editorWindow, true);
+		} else if (!compactBounds && workspace.isCompact(workspace.editorWindow)) {
 			// Anything other than a finished recording opens the full workspace.
-			editorWindow.setMinimumSize(800, 600);
-			editorWindow.maximize();
+			workspace.editorWindow.setMinimumSize(800, 600);
+			workspace.editorWindow.maximize();
 		}
-		if (!reviewHandoff) {
-			editorWindow.show();
-			editorWindow.focus();
+		if (!reviewTransfer.pending) {
+			workspace.editorWindow.show();
+			workspace.editorWindow.focus();
 		} else {
-			reviewHandoff.window = editorWindow;
-			editorWindow.webContents.setBackgroundThrottling(false);
+			reviewTransfer.transition({ type: "bind", window: workspace.editorWindow });
+			workspace.editorWindow.webContents.setBackgroundThrottling(false);
 		}
-		editorWindow.webContents.send("recording-workspace-returned");
-		if (previousWindow && previousWindow !== editorWindow && !previousWindow.isDestroyed()) {
-			isForceClosing = true;
-			closeWithoutAnimation(previousWindow);
-			isForceClosing = false;
+		workspace.editorWindow.webContents.send("recording-workspace-returned");
+		if (
+			previousWindow &&
+			previousWindow !== workspace.editorWindow &&
+			!previousWindow.isDestroyed()
+		) {
+			editorClose.transition({ type: "force", window: previousWindow });
+			try {
+				closeWithoutAnimation(previousWindow);
+			} finally {
+				if (!previousWindow.isDestroyed())
+					editorClose.transition({ type: "force-returned", window: previousWindow });
+			}
 		}
 		return;
 	}
-	const previousWindow = mainWindow;
+	const previousWindow = workspace.mainWindow;
 	const nextEditorWindow = createEditorWindow(
 		{},
-		{ compactBounds, hidden: Boolean(reviewHandoff) },
+		{ compactBounds, hidden: Boolean(reviewTransfer.pending) },
 	);
 	adoptEditorWindow(nextEditorWindow, Boolean(compactBounds));
-	if (reviewHandoff) {
-		reviewHandoff.window = nextEditorWindow;
+	if (reviewTransfer.pending) {
+		reviewTransfer.transition({ type: "bind", window: nextEditorWindow });
 		nextEditorWindow.webContents.setBackgroundThrottling(false);
 	}
-	if (options.bounds) reviewsInStudioFrame.add(nextEditorWindow);
-	workspaceTransition = { target: "editor", window: nextEditorWindow };
-	mainWindow = nextEditorWindow;
-	editorHasUnsavedChanges = false;
+	if (options.bounds)
+		workspace.transition({ type: "studio-frame", window: nextEditorWindow, studio: true });
+	workspace.transition({ type: "switch", target: "editor", window: nextEditorWindow });
+	adoptMainWindow(nextEditorWindow);
+	editorClose.transition({ type: "dirty", window: nextEditorWindow, dirty: false });
 
 	// Keep the old workspace visible until a cold editor has painted its first
 	// frame. Later recording round-trips reuse this editor and skip the cold path.
 	nextEditorWindow.once("ready-to-show", () => {
-		if (workspaceTransition?.window === nextEditorWindow) workspaceTransition = null;
+		if (workspace.pendingSwitch?.window === nextEditorWindow)
+			workspace.transition({ type: "settled", window: nextEditorWindow });
 		if (!previousWindow || previousWindow.isDestroyed()) return;
-		isForceClosing = true;
-		closeWithoutAnimation(previousWindow);
-		isForceClosing = false;
+		editorClose.transition({ type: "force", window: previousWindow });
+		try {
+			closeWithoutAnimation(previousWindow);
+		} finally {
+			if (!previousWindow.isDestroyed())
+				editorClose.transition({ type: "force-returned", window: previousWindow });
+		}
 	});
 }
 
@@ -859,67 +916,59 @@ function createEditorWindowWrapper(
  * window instead of building one. It loads no project until Electron shows it.
  */
 function prewarmReviewWindow() {
-	if ((editorWindow && !editorWindow.isDestroyed()) || workspaceTransition) return;
-	const compactBounds = compactReviewBoundsNear(mainWindow);
+	if ((workspace.editorWindow && !workspace.editorWindow.isDestroyed()) || workspace.pendingSwitch)
+		return;
+	const compactBounds = compactReviewBoundsNear(workspace.mainWindow);
 	const win = createEditorWindow({ prewarm: "1" }, { compactBounds, hidden: true });
 	adoptEditorWindow(win, true);
 }
 
-let reviewPrewarmTimer: NodeJS.Timeout | null = null;
 function scheduleReviewPrewarm(recording: boolean) {
-	if (reviewPrewarmTimer) clearTimeout(reviewPrewarmTimer);
-	reviewPrewarmTimer = null;
+	workspace.transition({ type: "cancel-prewarm" });
 	if (!recording) return;
-	// Let the capture start settle before loading a renderer next to it.
-	reviewPrewarmTimer = setTimeout(() => {
-		reviewPrewarmTimer = null;
-		if (isRecording) prewarmReviewWindow();
-	}, 2_000);
+	const token = Symbol("review-prewarm");
+	workspace.transition({
+		type: "prewarm",
+		token,
+		schedule: () =>
+			setTimeout(() => {
+				if (!workspace.transition({ type: "prewarm-fired", token })) return;
+				if (isRecording) prewarmReviewWindow();
+			}, 2_000),
+	});
 }
 
 function adoptEditorWindow(nextEditorWindow: BrowserWindow, compact: boolean) {
-	editorWindow = nextEditorWindow;
-	if (compact) compactReviewWindows.add(nextEditorWindow);
+	workspace.transition({ type: "editor", window: nextEditorWindow });
+	if (compact) workspace.transition({ type: "compact", window: nextEditorWindow, compact: true });
 	nextEditorWindow.on("maximize", () => setReviewWindowCompact(nextEditorWindow, false));
 	nextEditorWindow.on("enter-full-screen", () => setReviewWindowCompact(nextEditorWindow, false));
 	nextEditorWindow.webContents.once("did-finish-load", () => {
-		readyEditorWindows.add(nextEditorWindow);
+		workspace.transition({ type: "ready", window: nextEditorWindow });
 	});
 	nextEditorWindow.once("closed", () => {
-		if (workspaceTransition?.window === nextEditorWindow) workspaceTransition = null;
-		if (editorWindow === nextEditorWindow) editorWindow = null;
+		if (workspace.pendingSwitch?.window === nextEditorWindow)
+			workspace.transition({ type: "settled", window: nextEditorWindow });
+		workspace.transition({ type: "closed", window: nextEditorWindow });
+		editorClose.transition({ type: "closed", window: nextEditorWindow });
 	});
 
 	nextEditorWindow.on("close", (event) => {
-		if (isForceClosing || !editorHasUnsavedChanges || isCloseConfirmInFlight) return;
+		const closeState = editorClose.state(nextEditorWindow);
+		if (closeState.kind === "forcing" || closeState.kind === "clean") return;
+		if (closeState.kind === "confirming" || closeState.kind === "saving") {
+			event.preventDefault();
+			return;
+		}
 
 		event.preventDefault();
-		isCloseConfirmInFlight = true;
+		if (!editorClose.transition({ type: "confirm", window: nextEditorWindow })) return;
 
 		const windowToClose = nextEditorWindow;
 		if (!windowToClose || windowToClose.isDestroyed()) return;
 
 		// Ask renderer to show the in-app close dialog.
 		windowToClose.webContents.send("request-close-confirm");
-
-		ipcMain.once("close-confirm-response", (event, choice: "save" | "discard" | "cancel") => {
-			if (event.sender.id !== windowToClose?.webContents.id) return;
-			isCloseConfirmInFlight = false;
-			if (!windowToClose || windowToClose.isDestroyed()) return;
-
-			if (choice === "save") {
-				// Save first, then close when the renderer reports done.
-				windowToClose.webContents.send("request-save-before-close");
-				ipcMain.once("save-before-close-done", (event, shouldClose: boolean) => {
-					if (event.sender.id !== windowToClose?.webContents.id) return;
-					if (!shouldClose) return;
-					forceCloseEditorWindow(windowToClose);
-				});
-			} else if (choice === "discard") {
-				forceCloseEditorWindow(windowToClose);
-			}
-			// "cancel": flag reset, window stays open
-		});
 	});
 }
 
@@ -927,8 +976,8 @@ function createSourceSelectorWindowWrapper() {
 	sourceSelectorWindow = createSourceSelectorWindow();
 	sourceSelectorWindow.on("closed", () => {
 		sourceSelectorWindow = null;
-		if (mainWindow && !mainWindow.isDestroyed()) {
-			mainWindow.webContents.send("source-selector-closed");
+		if (workspace.mainWindow && !workspace.mainWindow.isDestroyed()) {
+			workspace.mainWindow.webContents.send("source-selector-closed");
 		}
 	});
 	return sourceSelectorWindow;
@@ -947,8 +996,8 @@ function createNotesWindowWrapper() {
 		notesWindow = createNotesWindow();
 		notesWindow.on("closed", () => {
 			notesWindow = null;
-			if (mainWindow && !mainWindow.isDestroyed()) {
-				mainWindow.webContents.send("notes-window-closed");
+			if (workspace.mainWindow && !workspace.mainWindow.isDestroyed()) {
+				workspace.mainWindow.webContents.send("notes-window-closed");
 			}
 		});
 		return notesWindow;
@@ -1027,7 +1076,10 @@ function startAgentServer(sttModelsDir: string) {
 		socketPath,
 		outDir: path.join(app.getPath("temp"), "klippt-agent"),
 		windows: () => BrowserWindow.getAllWindows().filter((window) => !window.isDestroyed()),
-		reviewWindow: () => (editorWindow && !editorWindow.isDestroyed() ? editorWindow : null),
+		reviewWindow: () =>
+			workspace.editorWindow && !workspace.editorWindow.isDestroyed()
+				? workspace.editorWindow
+				: null,
 		openStudio: () => studio?.open(),
 		studioState: () => studio?.snapshot() ?? null,
 		studioCommand: (raw) => {
@@ -1221,53 +1273,62 @@ appReady?.then(async () => {
 	await ensureRecordingsDir();
 
 	function currentHudWindow() {
-		return mainWindow &&
-			!mainWindow.isDestroyed() &&
-			mainWindow.webContents.getURL().includes("windowType=hud-overlay")
-			? mainWindow
+		return workspace.mainWindow &&
+			!workspace.mainWindow.isDestroyed() &&
+			workspace.mainWindow.webContents.getURL().includes("windowType=hud-overlay")
+			? workspace.mainWindow
 			: null;
 	}
 
 	function switchToHudWrapper() {
 		const studioMode = Boolean(studio?.ownsControls());
-		if (workspaceTransition?.target === "hud" && !workspaceTransition.window.isDestroyed()) {
+		if (
+			workspace.pendingSwitch?.target === "hud" &&
+			!workspace.pendingSwitch.window.isDestroyed()
+		) {
 			return;
 		}
 		if (
-			mainWindow &&
-			!mainWindow.isDestroyed() &&
-			mainWindow.webContents.getURL().includes("windowType=hud-overlay")
+			workspace.mainWindow &&
+			!workspace.mainWindow.isDestroyed() &&
+			workspace.mainWindow.webContents.getURL().includes("windowType=hud-overlay")
 		) {
 			if (!studioMode) {
-				mainWindow.show();
-				mainWindow.focus();
+				workspace.mainWindow.show();
+				workspace.mainWindow.focus();
 			} else studio?.open();
 			return;
 		}
-		const previousWindow = mainWindow;
+		const previousWindow = workspace.mainWindow;
 		const hudWindow = createHudOverlayWindow({ returnToReview: true, hidden: studioMode });
 		quitCaptureGuard.protectWindow(hudWindow);
 		if (isMac || process.platform === "linux") createCameraPreviewWindow();
-		workspaceTransition = { target: "hud", window: hudWindow };
-		mainWindow = hudWindow;
+		workspace.transition({ type: "switch", target: "hud", window: hudWindow });
+		adoptMainWindow(hudWindow);
 		if (studioMode) studio?.open();
 		if (!hudWindow || !previousWindow || previousWindow.isDestroyed()) return;
 		// The editor stays visible while the transparent HUD loads. Close it only
 		// when the HUD can paint, so Record feels like one workspace changing shape
 		// instead of one app disappearing before another appears.
 		hudWindow.once("ready-to-show", () => {
-			if (workspaceTransition?.window === hudWindow) workspaceTransition = null;
+			if (workspace.pendingSwitch?.window === hudWindow)
+				workspace.transition({ type: "settled", window: hudWindow });
 			if (previousWindow.isDestroyed()) return;
-			if (previousWindow === editorWindow) {
+			if (previousWindow === workspace.editorWindow) {
 				previousWindow.hide();
 			} else {
-				isForceClosing = true;
-				previousWindow.close();
-				isForceClosing = false;
+				editorClose.transition({ type: "force", window: previousWindow });
+				try {
+					previousWindow.close();
+				} finally {
+					if (!previousWindow.isDestroyed())
+						editorClose.transition({ type: "force-returned", window: previousWindow });
+				}
 			}
 		});
 		hudWindow.once("closed", () => {
-			if (workspaceTransition?.window === hudWindow) workspaceTransition = null;
+			if (workspace.pendingSwitch?.window === hudWindow)
+				workspace.transition({ type: "settled", window: hudWindow });
 		});
 	}
 
@@ -1280,7 +1341,7 @@ appReady?.then(async () => {
 		createSourceSelectorWindowWrapper,
 		createCountdownOverlayWindowWrapper,
 		createNotesWindowWrapper,
-		() => mainWindow,
+		() => workspace.mainWindow,
 		() => sourceSelectorWindow,
 		() => notesWindow,
 		() => countdownOverlayWindow,
@@ -1383,20 +1444,26 @@ appReady?.then(async () => {
 		take: studioTake,
 		setup: studioSetup,
 		openReview: (from, ready) => {
-			const token = ++reviewHandoffSequence;
-			reviewHandoff = { token, window: null, ready };
+			if (!reviewTransfer.transition({ type: "begin", ready })) return;
+			const token = reviewTransfer.pending?.token;
+			if (token === undefined) return;
 			createEditorWindowWrapper({ compactReview: true, bounds: from });
-			reviewHandoff?.window?.webContents.send("review-handoff", token);
-			setTimeout(() => {
-				if (reviewHandoff?.token === token) revealStudioReview();
-			}, 1500);
+			reviewTransfer.pending?.window?.webContents.send("review-handoff", token);
+			reviewTransfer.transition({
+				type: "deadline",
+				token,
+				schedule: () =>
+					setTimeout(() => {
+						if (reviewTransfer.pending?.token === token) revealStudioReview();
+					}, 1500),
+			});
 		},
 		cancelReview: () => {
-			if (reviewHandoff?.window && !reviewHandoff.window.isDestroyed()) {
-				reviewHandoff.window.hide();
-				reviewHandoff.window.webContents.setBackgroundThrottling(true);
+			if (reviewTransfer.pending?.window && !reviewTransfer.pending.window.isDestroyed()) {
+				reviewTransfer.pending.window.hide();
+				reviewTransfer.pending.window.webContents.setBackgroundThrottling(true);
 			}
-			reviewHandoff = null;
+			reviewTransfer.transition({ type: "cancel" });
 		},
 		motionEnabled: () =>
 			process.platform === "darwin" &&
@@ -1443,12 +1510,31 @@ appReady?.then(async () => {
 	// The pill runs the take; if its page dies nothing can pause or stop it any more.
 	// Save what was recorded and open the review, as Stop would.
 	app.on("render-process-gone", (_event, contents, details) => {
-		if (details.reason === "clean-exit" || !mainWindow || mainWindow.isDestroyed()) return;
-		if (contents !== mainWindow.webContents) return;
+		if (
+			details.reason === "clean-exit" ||
+			!workspace.mainWindow ||
+			workspace.mainWindow.isDestroyed()
+		)
+			return;
+		if (contents !== workspace.mainWindow.webContents) return;
 		if (!contents.getURL().includes("windowType=hud-overlay")) return;
 		console.error("[hud] the recording pill crashed:", details.reason, details.exitCode);
-		void stopTakeWithoutPill().then((saved) => {
-			if (saved) createEditorWindowWrapper({ compactReview: true });
+		const failedWindow = workspace.mainWindow;
+		rendererRecovery.transition({
+			type: "recover",
+			window: failedWindow,
+			schedule: () =>
+				Promise.resolve().then(async () => {
+					try {
+						const saved = await stopTakeWithoutPill();
+						if (!rendererRecovery.transition({ type: "finished", window: failedWindow, saved }))
+							return;
+						if (saved) createEditorWindowWrapper({ compactReview: true });
+					} catch (error) {
+						rendererRecovery.transition({ type: "finished", window: failedWindow, saved: false });
+						console.error("[hud] The crashed take needs recovery", error);
+					}
+				}),
 		});
 	});
 
@@ -1522,7 +1608,7 @@ appReady?.then(async () => {
 			setTimeout(() => app.exit(0), 100);
 		});
 		const query = Object.fromEntries(new URLSearchParams(benchArg.slice("--bench=".length)));
-		mainWindow = createEditorWindow({ ...query, windowType: "bench" });
+		adoptMainWindow(createEditorWindow({ ...query, windowType: "bench" }));
 		return;
 	}
 
@@ -1531,7 +1617,7 @@ appReady?.then(async () => {
 	// scan only decide whether the editor replaces the HUD, so they run behind it.
 	createWindow();
 	startup.mark("hud-created");
-	mainWindow?.once("ready-to-show", () => {
+	workspace.mainWindow?.once("ready-to-show", () => {
 		startup.mark("hud-ready-to-show");
 		void appendRecordStartTiming(
 			path.join(app.getPath("userData"), "diagnostics", "startup-timing.jsonl"),
