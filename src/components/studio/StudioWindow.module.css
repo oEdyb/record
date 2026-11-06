@@ -124,6 +124,17 @@
 	color: var(--ink);
 }
 
+.sourceName {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.setup button > svg {
+	flex-shrink: 0;
+}
+
 .setup button:first-child {
 	max-width: 260px;
 	overflow: hidden;
@@ -466,7 +477,7 @@
 	width: 36px;
 	height: 4px;
 	border-radius: 2px;
-	background: rgba(255, 255, 255, 0.18);
+	background: rgba(255, 255, 255, 0.35);
 	transition: background 120ms ease;
 }
 
@@ -481,7 +492,7 @@
 	width: 4px;
 	height: 36px;
 	border-radius: 2px;
-	background: rgba(255, 255, 255, 0.18);
+	background: rgba(255, 255, 255, 0.35);
 	transition: background 120ms ease;
 }
 
@@ -575,21 +586,40 @@
 	opacity: 1;
 }
 
-/* Narrow docks put the seek bar on its own line instead of crushing it into the time. */
 .replayControls {
+	display: flex;
 	flex-wrap: wrap;
-	height: auto;
-	row-gap: 6px;
+	flex-shrink: 0;
+	align-items: center;
+	gap: 8px;
+	padding: 10px 4px 2px;
 }
 
 .replayControls > [role="slider"] {
-	flex: 1 1 140px;
-	min-width: 140px;
+	flex: 1 0 100%;
+	min-width: 0;
+	order: 1;
 }
 
-.replayControls {
-	flex-shrink: 0;
-	padding: 10px 4px 2px;
+.replayControls > span:last-child {
+	margin-left: auto;
+}
+
+.transcriptStatus {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+	margin: 12px 0 0;
+	padding: 12px;
+	border: 1px solid var(--line);
+	border-radius: var(--hud-radius-md);
+	color: var(--ink-2);
+	font-size: 13px;
+}
+
+.transcriptStatus[data-tone="error"] {
+	color: #ffb4aa;
 }
 
 .replayError {
@@ -684,7 +714,7 @@
 
 .sentence:hover,
 .sentence[data-active="true"] {
-	background: var(--hud-fill-strong);
+	background: rgba(255, 255, 255, 0.08);
 	color: var(--ink);
 }
 
@@ -698,13 +728,11 @@
 }
 
 .statusAction {
-	margin-left: 6px;
-	padding: 0;
-	border: 0;
-	background: none;
+	padding: 6px 10px;
+	border: 1px solid var(--line);
+	border-radius: var(--hud-radius-md);
+	background: var(--hud-fill);
 	color: var(--ink) !important;
-	text-decoration: underline;
-	text-underline-offset: 3px;
 }
 
 .latest {
@@ -1097,7 +1125,7 @@
 }
 
 .rail button[aria-current] i {
-	background: var(--ink);
+	background: var(--muted);
 }
 
 .sentence[data-time] {
@@ -1121,7 +1149,7 @@
 	}
 
 	.setup button:first-child {
-		max-width: 140px;
+		max-width: 190px;
 	}
 
 	.document {

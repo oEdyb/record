@@ -1,4 +1,4 @@
-import { Check, Copy } from "lucide-react";
+import { AlertCircle, Check, Copy } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { formatTimePadded } from "@/utils/timeUtils";
 import "../launch/TranscriptWindow.css";
@@ -112,7 +112,12 @@ export function StudioTranscript({
 				</button>
 			</div>
 			{status.text ? (
-				<div className="transcript-status" data-tone={status.tone}>
+				<div
+					className={styles.transcriptStatus}
+					data-tone={status.tone}
+					role={status.tone === "error" ? "alert" : "status"}
+				>
+					{status.tone === "error" ? <AlertCircle size={16} aria-hidden /> : null}
 					{status.text}
 					{status.action ? (
 						<button type="button" className={styles.statusAction} onClick={status.action.run}>

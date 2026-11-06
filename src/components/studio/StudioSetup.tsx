@@ -161,7 +161,9 @@ export function StudioSetup({
 					}
 				>
 					<Monitor size={16} />
-					{setup.source?.name ?? t("deviceSettings.source")}
+					<span className={styles.sourceName}>
+						{setup.source?.name ?? t("deviceSettings.source")}
+					</span>
 				</button>
 				<span className={styles.micGroup}>
 					<button

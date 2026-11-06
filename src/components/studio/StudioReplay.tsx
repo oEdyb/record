@@ -290,7 +290,7 @@ export function StudioReplay({
 					{labels.playbackError}
 				</p>
 			) : null}
-			<div className={`${peek.clipPeekControls} ${styles.replayControls}`}>
+			<div className={styles.replayControls}>
 				<button
 					type="button"
 					className={peek.clipPeekPlay}

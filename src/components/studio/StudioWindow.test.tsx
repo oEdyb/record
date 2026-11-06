@@ -68,6 +68,7 @@ function snapshot(phase: StudioSnapshot["phase"]): StudioSnapshot {
 let listener: (value: StudioSnapshot) => void;
 const command = vi.fn();
 const unsubscribe = vi.fn();
+const refresh = vi.fn();
 function mount(value: StudioSnapshot, platform = "darwin") {
 	Object.defineProperty(window, "electronAPI", {
 		configurable: true,
@@ -82,7 +83,7 @@ function mount(value: StudioSnapshot, platform = "darwin") {
 			studioCommand: command,
 			requestCameraPreviewConnection: vi.fn(),
 			writeClipboardText: vi.fn(async () => undefined),
-			refreshTranscript: vi.fn(),
+			refreshTranscript: refresh,
 		},
 	});
 	return render(
@@ -256,6 +257,16 @@ describe("Studio phase controls", () => {
 				expect(document.getElementById("studio-replay")).toBeVisible();
 			}
 		}
+	});
+
+	it("offers transcription recovery without discarding completed text", async () => {
+		const value = snapshot("review");
+		value.transcript.error = "Transcription failed";
+		mount(value);
+		expect(await screen.findByRole("alert")).toHaveTextContent("Transcription failed");
+		fireEvent.click(screen.getByRole("button", { name: "studio.transcribeNow" }));
+		expect(refresh).toHaveBeenCalledOnce();
+		expect(screen.getByRole("button", { name: "A sentence." })).toBeVisible();
 	});
 
 	it("releases its snapshot subscription", async () => {

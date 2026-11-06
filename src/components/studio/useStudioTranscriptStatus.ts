@@ -15,7 +15,18 @@ export function useStudioTranscriptStatus(
 		if (!transcript) return { text: "", tone: "info" as const };
 		// The transcriber keeps its last take until it runs again; that one's news is old.
 		const ours = transcript.recordingId === snapshot?.recordingId;
-		if (ours && transcript.error) return { text: transcript.error, tone: "error" as const };
+		if (ours && transcript.error)
+			return {
+				text: transcript.error,
+				tone: "error" as const,
+				action:
+					paused || phase === "review"
+						? {
+								label: t("studio.transcribeNow"),
+								run: () => void window.electronAPI.refreshTranscript(),
+							}
+						: undefined,
+			};
 		if (ours && transcript.status === "downloading-model" && transcript.download)
 			return {
 				text: t("transcript.downloading", {
