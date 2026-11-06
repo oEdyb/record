@@ -30,3 +30,11 @@ When Stop is already queued behind Continue, Linux does not acquire a new render
 Hook regressions cover cancelled startup on Linux/macOS/Windows, a replacement start after cleanup, Windows Cancel→Restart, browser transport exceptions followed by Stop, and Stop queued behind native Pause. Machine tests cover illegal-transition logging, queued Save priority and finalization joining. Mac/Windows native runtime remains unproven on Linux.
 
 The React external-store contract is https://react.dev/reference/react/useSyncExternalStore. Store subscriptions are stable; snapshots change only through the transition function. Native media and IPC behavior remains governed by the existing helper contracts and platform tests.
+
+## Main native recording service
+
+`electron/recording/nativeRecordingLifecycle.ts` owns acquisition, helper ownership, prepared/live/paused/configuring/resuming/failed phases, source-selection reservation, metadata admission, shared Stop and the one-time quit result. Old mode fields in `NativeMacRecordingService` are derived getters. Source/session identifiers, cursor clocks, committed clips and generation identities remain payload data. Promise chains serialize durable work; their presence does not define the current capture phase.
+
+Stop reservation wraps the current take. A late Pause/Continue/fatal event updates the wrapped writer phase without clearing that reservation. Reset drops helper ownership but retains the shared Stop promise until that exact operation settles. Source-picker cancellation remains outside the queue. A quit result is collected once; an invalid source request cannot erase it. A failed helper lookup releases startup ownership so Record can retry.
+
+The existing `NativeMacHelperClient` command/acknowledgement implementation and service durability tests are the contract reference for ordering. The conversion retains first-frame checks, initial recovery-before-helper creation, original metadata admission through helper finalization, live helper checks, persistence before published clips, renderer handoff and generation filtering. Regression tests reject/log a new start while Stop is reserved and cover late acknowledgements, fatal/reset during Stop, lookup retry and invalid selection after quit.

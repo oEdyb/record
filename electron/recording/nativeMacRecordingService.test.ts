@@ -25,6 +25,7 @@ import {
 	nativeMacRecoveryJournalPath,
 	restoreNativeMacRecoverySession,
 } from "./nativeMacRecoveryJournal";
+import { NativeRecordingLifecycle } from "./nativeRecordingLifecycle";
 import { createQuitCaptureGuard } from "./quitCaptureGuard";
 import { STORAGE_POLL_MS } from "./recordingStorage";
 import { RendererRecordingStop } from "./rendererRecordingStop";
@@ -1213,6 +1214,34 @@ describe("NativeMacRecordingService", () => {
 		await expect(service.stop()).resolves.toMatchObject({ success: false });
 	});
 
+	it("keeps the quit Stop result when an invalid source selection is requested", async () => {
+		const service = new NativeMacRecordingService(deps);
+		await service.start(baseRequest);
+		helper.stopClips = [
+			{ index: 0, screenVideoPath: path.join(recordingsDir, "clip.mp4"), durationMs: 1000 },
+		];
+		await service.stopBeforeQuit();
+		await expect(service.selectSource()).resolves.toMatchObject({ success: false });
+		await expect(service.stop()).resolves.toMatchObject({
+			success: true,
+			session: expect.objectContaining({ createdAt: 100 }),
+		});
+		expect(helper.stop).toHaveBeenCalledOnce();
+	});
+	it("releases startup ownership after helper lookup rejects", async () => {
+		vi.mocked(deps.findHelperPath).mockRejectedValueOnce(new Error("lookup failed"));
+		const service = new NativeMacRecordingService(deps);
+		await expect(service.start(baseRequest)).resolves.toMatchObject({
+			success: false,
+			error: "lookup failed",
+		});
+		await expect(service.start(baseRequest)).resolves.toMatchObject({
+			success: true,
+			recordingId: 100,
+		});
+		expect(helper.waitForStart).toHaveBeenCalledOnce();
+	});
+
 	it("does not hand an earlier quit-time take to a new take's Stop", async () => {
 		const service = new NativeMacRecordingService(deps);
 		await service.start(baseRequest);
@@ -2107,5 +2136,57 @@ describe("NativeMacRecordingService", () => {
 		});
 		await service.resume();
 		expect(service.transcriptClipListing().live).toBe(true);
+	});
+});
+
+describe("native recording lifecycle authority", () => {
+	function live() {
+		const machine = new NativeRecordingLifecycle();
+		const writer = new FakeHelper();
+		machine.transition({ type: "start", prepare: false });
+		machine.transition({ type: "helper", helper: writer });
+		machine.transition({ type: "ready" });
+		return { machine, writer };
+	}
+	it.each(["paused", "resumed"] as const)("keeps Stop reserved when %s acknowledges", (event) => {
+		const { machine } = live();
+		const operation = Promise.resolve({ success: true });
+		machine.transition({ type: "stop", operation });
+		expect(machine.transition({ type: event })).toBe(true);
+		expect(machine.stop).toBe(operation);
+		expect(machine.getSnapshot().kind).toBe("stopping");
+		const log = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+		try {
+			expect(machine.transition({ type: "start", prepare: false })).toBe(false);
+			expect(log).toHaveBeenCalledWith(
+				"[native-recording-lifecycle] Illegal transition",
+				expect.objectContaining({ state: "stopping", event: "start" }),
+			);
+		} finally {
+			log.mockRestore();
+		}
+		expect(machine.stop).toBe(operation);
+	});
+	it("retains the shared Stop operation through failure and cleanup", () => {
+		const { machine } = live();
+		const operation = Promise.resolve({ success: true });
+		machine.transition({ type: "stop", operation });
+		machine.transition({
+			type: "fatal",
+			failure: { code: "capture-failed", message: "interrupted" },
+		});
+		expect(machine.failure?.message).toBe("interrupted");
+		expect(machine.stop).toBe(operation);
+		machine.transition({ type: "reset" });
+		expect(machine.stop).toBe(operation);
+		expect(machine.helper).toBeNull();
+		machine.transition({ type: "stopped", operation });
+		expect(machine.getSnapshot()).toEqual({ kind: "idle" });
+	});
+	it("replaces an exited writer while retaining the one live helper guard", () => {
+		const { machine, writer } = live();
+		writer.running = false;
+		expect(machine.transition({ type: "start", prepare: false })).toBe(true);
+		expect(machine.helper).toBeNull();
 	});
 });

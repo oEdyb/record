@@ -31,6 +31,7 @@ import {
 	persistNativeMacRecoveryJournal,
 	restoreNativeMacRecoverySession,
 } from "./nativeMacRecoveryJournal";
+import { NativeRecordingLifecycle } from "./nativeRecordingLifecycle";
 import {
 	freeDiskBytes,
 	helperImportantUsageBytes,
@@ -132,12 +133,7 @@ export type NativeMacRecordingStopResult = {
 
 /** Owns one native recording and serializes its lifecycle commands. */
 export class NativeMacRecordingService {
-	private prepared = false;
 	private preparationToken = 0;
-	private preparing = false;
-	private sourceSelectionOperation: Promise<NativeLinuxSourceSelectionResult> | null = null;
-	private sourceSelectionCancellation: AbortController | null = null;
-	private helper: NativeMacCaptureHelper | null = null;
 	private targetPath: string | null = null;
 	private recordingId: number | null = null;
 	private captureConfig: NativeMacRecordingRequest | null = null;
@@ -148,21 +144,47 @@ export class NativeMacRecordingService {
 	private clipCursorModes = new Map<number, CursorCaptureMode>();
 	private pauseStartedAtMs: number | null = null;
 	private pauseRanges: Array<{ startMs: number; endMs: number }> = [];
-	private paused = false;
 	private clips: RecordingSessionClip[] = [];
 	private activeClipIndex: number | null = null;
-	private fatalError: NativeMacRecordingFailure | null = null;
 	private commandChain: Promise<void> = Promise.resolve();
 	private lastDiagnosticOutput = "";
 	private sessionGeneration = 0;
 	private originals = new Map<number, Partial<RecordingSessionClip>>();
 	private rendererWebcamPaths = new Set<string>();
 	private recoveryWrites: Promise<void> = Promise.resolve();
-	private acceptsOriginalMetadata = false;
-	/** A take the app stopped on its own (quit), kept until the HUD's own Stop collects it. */
-	private appStoppedResult: NativeMacRecordingStopResult | null = null;
-	private stopOperation: Promise<NativeMacRecordingStopResult> | null = null;
 	private readonly storage: RecordingStorageMonitor;
+
+	private readonly lifecycle = new NativeRecordingLifecycle();
+	private get prepared() {
+		return this.lifecycle.prepared;
+	}
+	private get preparing() {
+		return this.lifecycle.preparing;
+	}
+	private get helper() {
+		return this.lifecycle.helper;
+	}
+	private get paused() {
+		return this.lifecycle.paused;
+	}
+	private get fatalError() {
+		return this.lifecycle.failure;
+	}
+	private get stopOperation() {
+		return this.lifecycle.stop;
+	}
+	private get appStoppedResult() {
+		return this.lifecycle.appStopped;
+	}
+	private get acceptsOriginalMetadata() {
+		return this.lifecycle.acceptsOriginals;
+	}
+	private get sourceSelectionOperation() {
+		return this.lifecycle.selection?.operation ?? null;
+	}
+	private get sourceSelectionCancellation() {
+		return this.lifecycle.selection?.cancellation ?? null;
+	}
 
 	constructor(private readonly deps: NativeMacRecordingServiceDependencies) {
 		this.storage = new RecordingStorageMonitor({
@@ -255,7 +277,7 @@ export class NativeMacRecordingService {
 				success: false,
 				error: "Native capture is already running or preparing.",
 			});
-		this.preparing = true;
+		this.lifecycle.transition({ type: "start", prepare: true });
 		return this.start({ ...request, deferStart: true });
 	}
 
@@ -263,8 +285,7 @@ export class NativeMacRecordingService {
 	async cancelPrepare(): Promise<void> {
 		if (!this.preparing && !this.prepared) return;
 		this.preparationToken += 1;
-		this.preparing = false;
-		this.prepared = false;
+		this.lifecycle.transition({ type: "cancel-prepare" });
 		await this.helper?.kill();
 	}
 
@@ -284,7 +305,7 @@ export class NativeMacRecordingService {
 					if (this.captureConfigKey(config) !== this.captureConfigKey(this.captureConfig))
 						throw new Error("Capture settings changed after portal selection. Start again.");
 					if (!helper.arm) throw new Error("Native capture does not support deferred start.");
-					this.prepared = false;
+					this.lifecycle.transition({ type: "arm" });
 					helper.arm();
 					await helper.waitForStart();
 					const startedAtMs = helper.firstFrameStartedAtMs ?? this.deps.now();
@@ -294,6 +315,7 @@ export class NativeMacRecordingService {
 						throw new Error(this.fatalError?.message ?? "Native capture exited during startup.");
 					this.cursorOffsetMs = Math.max(0, startedAtMs - this.cursorRecordingStartMs);
 					this.storage.start();
+					this.lifecycle.transition({ type: "ready" });
 					this.deps.onRecordingStateChange(true);
 					return {
 						success: true,
@@ -310,18 +332,22 @@ export class NativeMacRecordingService {
 			if (this.isRunning()) {
 				return { success: false, error: "Native capture is already running." };
 			}
-			this.appStoppedResult = null;
-			const helperPath = await this.deps.findHelperPath();
-			if (!helperPath) {
-				this.preparing = false;
-				return { success: false, error: "Native capture helper is not available." };
-			}
-			if (!request?.source?.sourceId && request.platform !== "linux") {
-				this.preparing = false;
-				return { success: false, error: "Native capture request is missing a source." };
-			}
-
+			if (
+				!this.preparing &&
+				!this.lifecycle.transition({ type: "start", prepare: request.deferStart === true })
+			)
+				return { success: false, error: "Native recording lifecycle is busy." };
 			try {
+				const helperPath = await this.deps.findHelperPath();
+				if (!helperPath) {
+					this.lifecycle.transition({ type: "reset" });
+					return { success: false, error: "Native capture helper is not available." };
+				}
+				if (!request?.source?.sourceId && request.platform !== "linux") {
+					this.lifecycle.transition({ type: "reset" });
+					return { success: false, error: "Native capture request is missing a source." };
+				}
+
 				const recordingId = Number.isFinite(request.recordingId)
 					? (request.recordingId as number)
 					: this.deps.now();
@@ -339,7 +365,7 @@ export class NativeMacRecordingService {
 				await fs.mkdir(this.deps.recordingsDir, { recursive: true });
 				const storageError = storageStartError(await this.freeDiskBytes(this.deps.recordingsDir));
 				if (storageError) {
-					this.preparing = false;
+					this.lifecycle.transition({ type: "reset" });
 					return { success: false, error: storageError };
 				}
 
@@ -369,8 +395,7 @@ export class NativeMacRecordingService {
 					config,
 					(failure) => {
 						if (generation !== this.sessionGeneration) return;
-						this.paused = true;
-						this.fatalError = failure;
+						this.lifecycle.transition({ type: "fatal", failure });
 						void this.persistRecoverySession().catch((error) => {
 							console.warn("[capture-mac] could not preserve interruption status:", error);
 						});
@@ -378,17 +403,16 @@ export class NativeMacRecordingService {
 					},
 					(original) => this.storeOriginalStarted(original, generation),
 				);
-				this.helper = helper;
+				this.lifecycle.transition({ type: "helper", helper });
 				this.deps.onStartStage?.("helper-spawned");
 				if (request.deferStart) {
 					if (!helper.waitForSourceSelected)
 						throw new Error("Native capture does not support source preparation.");
 					await helper.waitForSourceSelected();
 					await this.syncLinuxCursorMode();
-					if (preparationToken !== this.preparationToken || !helper.isRunning())
+					if (preparationToken !== this.preparationToken || !helper.isRunning() || this.fatalError)
 						throw new Error("Source selection cancelled.");
-					this.preparing = false;
-					this.prepared = true;
+					this.lifecycle.transition({ type: "prepared" });
 					return { success: true, recordingId, path: outputPath, helperPath };
 				}
 				await helper.waitForStart();
@@ -404,6 +428,7 @@ export class NativeMacRecordingService {
 				}
 				this.cursorOffsetMs = Math.max(0, startedAtMs - cursorStartTimeMs);
 				this.storage.start();
+				this.lifecycle.transition({ type: "ready" });
 				this.deps.onRecordingStateChange(true);
 				return { success: true, recordingId, path: outputPath, helperPath, startedAtMs };
 			} catch (error) {
@@ -415,7 +440,7 @@ export class NativeMacRecordingService {
 					() => null,
 					(killError: unknown) => killError,
 				);
-				this.acceptsOriginalMetadata = false;
+				this.lifecycle.transition({ type: "seal" });
 				await this.recoveryWrites.catch(() => undefined);
 				if (
 					failedRecordingId !== null &&
@@ -452,7 +477,7 @@ export class NativeMacRecordingService {
 		await Promise.race([
 			Promise.resolve(stop)
 				.then(async (result) => {
-					if (result && !existingStop) this.appStoppedResult = result;
+					if (result && !existingStop) this.lifecycle.transition({ type: "publish", result });
 					if (recordingId !== null && !completion.signal.aborted)
 						await this.deps.onAppStopped?.(recordingId, completion.signal);
 				})
@@ -482,7 +507,7 @@ export class NativeMacRecordingService {
 			try {
 				this.pauseStartedAtMs = this.deps.now();
 				finalizedClip = await helper.pause();
-				this.paused = true;
+				this.lifecycle.transition({ type: "paused" });
 				if (finalizedClip) {
 					finalizedClip = {
 						...finalizedClip,
@@ -501,7 +526,7 @@ export class NativeMacRecordingService {
 				const helperPaused = error instanceof NativeMacPauseError && error.helperPaused;
 				// Record the helper's state before saving: a failed save must not leave
 				// the HUD counting while the helper has stopped writing.
-				if (helperPaused) this.paused = true;
+				if (helperPaused) this.lifecycle.transition({ type: "paused" });
 				else if (!this.paused) this.pauseStartedAtMs = null;
 				if (error instanceof NativeMacPauseError && error.clip) {
 					finalizedClip = {
@@ -545,6 +570,7 @@ export class NativeMacRecordingService {
 			) {
 				return { success: true, prepared: false };
 			}
+			this.lifecycle.transition({ type: "prepare-resume" });
 			try {
 				await this.deps.prepareCapturePermissions(request);
 				if (this.stopOperation)
@@ -557,14 +583,26 @@ export class NativeMacRecordingService {
 				return { success: true, prepared: true };
 			} catch (error) {
 				return { success: false, prepared: false, error: this.errorMessage(error) };
+			} finally {
+				if (this.lifecycle.configuring) this.lifecycle.transition({ type: "paused" });
 			}
 		});
 	}
 
 	selectSource(cursorMode?: CursorCaptureMode): Promise<NativeLinuxSourceSelectionResult> {
 		if (this.sourceSelectionOperation) return this.sourceSelectionOperation;
+		if (this.stopOperation || this.appStoppedResult) {
+			console.warn("[native-recording-lifecycle] Illegal transition", {
+				event: "select",
+				state: this.lifecycle.getSnapshot().kind,
+			});
+			return Promise.resolve({
+				success: false,
+				error: "Source selection requires a paused Linux recording.",
+			});
+		}
 		const cancellation = new AbortController();
-		this.sourceSelectionCancellation = cancellation;
+
 		const operation = this.enqueue(async () => {
 			if (cancellation.signal.aborted) return { success: false, cancelled: true };
 			const helper = this.helper;
@@ -606,11 +644,10 @@ export class NativeMacRecordingService {
 				cancellation.signal.removeEventListener("abort", cancel);
 			}
 		});
-		this.sourceSelectionOperation = operation;
+		this.lifecycle.transition({ type: "select", selection: { operation, cancellation } });
 		const clear = () => {
 			if (this.sourceSelectionOperation !== operation) return;
-			this.sourceSelectionOperation = null;
-			this.sourceSelectionCancellation = null;
+			this.lifecycle.transition({ type: "selected", operation });
 		};
 		void operation.then(clear, clear);
 		return operation;
@@ -622,11 +659,11 @@ export class NativeMacRecordingService {
 			if (this.stopOperation) return stopping;
 			const helper = this.requireHelper();
 			if (!this.paused) return { success: true };
-			let resumeRequested = false;
 			try {
 				const storageError = storageStartError(await this.freeDiskBytes(this.deps.recordingsDir));
 				if (storageError) return { success: false, paused: true, error: storageError };
 				if (request) {
+					this.lifecycle.transition({ type: "configure-resume" });
 					if (
 						this.recordingId === null ||
 						!this.targetPath ||
@@ -656,11 +693,11 @@ export class NativeMacRecordingService {
 					this.cursorCaptureMode = cursorCaptureMode;
 				}
 				if (this.stopOperation) return stopping;
-				resumeRequested = true;
+				this.lifecycle.transition({ type: "resume-requested" });
 				const clipIndex = await helper.resume();
 				await this.syncLinuxCursorMode();
 				this.completeCursorPauseRange();
-				this.paused = false;
+				this.lifecycle.transition({ type: "resumed" });
 				this.activeClipIndex = clipIndex;
 				this.clipCursorModes.set(clipIndex, this.cursorCaptureMode);
 				this.storage.rearm();
@@ -671,6 +708,7 @@ export class NativeMacRecordingService {
 					...(helper.clipStartedAtMs !== undefined ? { startedAtMs: helper.clipStartedAtMs } : {}),
 				};
 			} catch (error) {
+				const resumeRequested = this.lifecycle.resumeDispatched;
 				const rejectedIndex =
 					error instanceof NativeMacResumeRejectedError ? error.clipIndex : null;
 				let safelyPaused =
@@ -689,20 +727,30 @@ export class NativeMacRecordingService {
 						if (metadataChanged) await this.persistRecoverySession();
 					} catch (recoveryError) {
 						if (!this.fatalError) {
-							this.fatalError = {
-								code: "capture-recovery-failed",
-								message: `Rejected clip recovery metadata could not be cleared: ${this.errorMessage(recoveryError)}`,
-							};
-							this.notifyFatalError(this.fatalError);
+							this.lifecycle.transition({
+								type: "fatal",
+								failure: {
+									code: "capture-recovery-failed",
+									message: `Rejected clip recovery metadata could not be cleared: ${this.errorMessage(recoveryError)}`,
+								},
+							});
+							if (this.fatalError) this.notifyFatalError(this.fatalError);
 						}
-						return { success: false, error: this.fatalError.message };
+						return {
+							success: false,
+							error: this.fatalError?.message ?? this.errorMessage(recoveryError),
+						};
 					}
 					safelyPaused = helper.isRunning() && !this.fatalError;
 				}
 				if (resumeRequested && !this.fatalError && !safelyPaused) {
-					this.fatalError = { code: "capture-resume-failed", message: this.errorMessage(error) };
-					this.notifyFatalError(this.fatalError);
+					this.lifecycle.transition({
+						type: "fatal",
+						failure: { code: "capture-resume-failed", message: this.errorMessage(error) },
+					});
+					if (this.fatalError) this.notifyFatalError(this.fatalError);
 				}
+				if (safelyPaused) this.lifecycle.transition({ type: "paused" });
 				return {
 					success: false,
 					...(safelyPaused ? { paused: true } : {}),
@@ -770,7 +818,7 @@ export class NativeMacRecordingService {
 			const helper = this.helper;
 			if (!helper) {
 				const appStopped = this.appStoppedResult;
-				this.appStoppedResult = null;
+				if (appStopped) this.lifecycle.transition({ type: "collect" });
 				if (appStopped && !discard) return appStopped;
 				return { success: false, error: "Native capture is not running." };
 			}
@@ -789,13 +837,13 @@ export class NativeMacRecordingService {
 						screenPath: preferredPath ?? "",
 						clips: this.clips,
 					});
-					this.acceptsOriginalMetadata = false;
+					this.lifecycle.transition({ type: "seal" });
 					await this.recoveryWrites.catch(() => undefined);
 					stoppedPaths = [stopped.screenPath, ...stopped.clips.map((clip) => clip.screenVideoPath)];
 					this.deps.onStopStage?.("helper-stopped");
 				} catch (error) {
 					await helper.kill();
-					this.acceptsOriginalMetadata = false;
+					this.lifecycle.transition({ type: "seal" });
 					await this.recoveryWrites.catch(() => undefined);
 					const recoveredSession = discard
 						? null
@@ -976,15 +1024,16 @@ export class NativeMacRecordingService {
 						console.warn("[capture-mac] capture helper did not exit after Stop:", killError);
 					});
 				this.deps.onStopStage?.("helper-exited");
-				this.acceptsOriginalMetadata = false;
+				this.lifecycle.transition({ type: "seal" });
 				await this.recoveryWrites.catch(() => undefined);
 				this.reset();
 				this.deps.onRecordingStateChange(false);
 			}
 		});
-		this.stopOperation = operation;
+		this.lifecycle.transition({ type: "stop", operation });
 		const clear = () => {
-			if (this.stopOperation === operation) this.stopOperation = null;
+			if (this.stopOperation === operation)
+				this.lifecycle.transition({ type: "stopped", operation });
 		};
 		void operation.then(clear, clear);
 		return operation;
@@ -999,7 +1048,7 @@ export class NativeMacRecordingService {
 		this.sessionGeneration += 1;
 		this.originals = new Map();
 		this.rendererWebcamPaths.clear();
-		this.acceptsOriginalMetadata = true;
+
 		this.recordingId = recordingId;
 		this.targetPath = outputPath;
 		this.captureConfig = config;
@@ -1009,23 +1058,21 @@ export class NativeMacRecordingService {
 		this.clipCursorModes = new Map([[0, cursorCaptureMode]]);
 		this.pauseStartedAtMs = null;
 		this.pauseRanges = [];
-		this.paused = false;
+
 		this.clips = [];
 		this.activeClipIndex = 0;
-		this.fatalError = null;
+
 		this.lastDiagnosticOutput = "";
 	}
 
 	private reset(): void {
-		this.prepared = false;
-		this.preparing = false;
+		this.lastDiagnosticOutput = this.helper?.output ?? this.lastDiagnosticOutput;
+		this.lifecycle.transition({ type: "reset" });
 		this.storage.stop();
 		this.sessionGeneration += 1;
 		this.originals = new Map();
 		this.rendererWebcamPaths.clear();
-		this.acceptsOriginalMetadata = false;
-		this.lastDiagnosticOutput = this.helper?.output ?? this.lastDiagnosticOutput;
-		this.helper = null;
+
 		this.targetPath = null;
 		this.recordingId = null;
 		this.captureConfig = null;
@@ -1036,10 +1083,9 @@ export class NativeMacRecordingService {
 		this.clipCursorModes = new Map();
 		this.pauseStartedAtMs = null;
 		this.pauseRanges = [];
-		this.paused = false;
+
 		this.clips = [];
 		this.activeClipIndex = null;
-		this.fatalError = null;
 	}
 
 	private completeCursorPauseRange(endMs = this.deps.now()): void {
@@ -1157,12 +1203,14 @@ export class NativeMacRecordingService {
 		});
 		void this.persistRecoverySession().catch((error) => {
 			if (generation !== this.sessionGeneration || this.fatalError) return;
-			this.paused = true;
-			this.fatalError = {
-				code: "capture-recovery-failed",
-				message: `Original recording recovery metadata could not be saved: ${this.errorMessage(error)}`,
-			};
-			this.notifyFatalError(this.fatalError);
+			this.lifecycle.transition({
+				type: "fatal",
+				failure: {
+					code: "capture-recovery-failed",
+					message: `Original recording recovery metadata could not be saved: ${this.errorMessage(error)}`,
+				},
+			});
+			if (this.fatalError) this.notifyFatalError(this.fatalError);
 		});
 	}
 
