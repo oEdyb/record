@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { seedProjectState } from "@/lib/ai-edition/store/projectStore.testUtils";
 import { type AxcutDocument, createEmptyDocument } from "../schema";
 import { useProjectStore } from "./projectStore";
 import { clearHistory, redo, undo } from "./undo";
@@ -60,7 +62,7 @@ describe("project document undo and redo", () => {
 	it("treats one persisted clip insertion as one atomic undo step", async () => {
 		const before = documentWithClipIds(["old-1", "old-2"]);
 		const after = documentWithClipIds(["old-1", "inserted", "old-2"]);
-		useProjectStore.setState({ projectId: before.project.id, document: before });
+		seedProjectState({ projectId: before.project.id, document: before });
 
 		await useProjectStore.getState().saveDocumentAsEdit(after);
 		expect(useProjectStore.getState().document?.timeline.clips.map((clip) => clip.id)).toEqual([
@@ -87,7 +89,7 @@ describe("project document undo and redo", () => {
 	it("does not add a failed save to history", async () => {
 		const before = documentWithClipIds(["old-1"]);
 		const after = documentWithClipIds(["old-1", "inserted"]);
-		useProjectStore.setState({ projectId: before.project.id, document: before });
+		seedProjectState({ projectId: before.project.id, document: before });
 		bridgeMocks.save.mockResolvedValueOnce({ success: false, error: "disk full" });
 
 		await expect(useProjectStore.getState().saveDocumentAsEdit(after)).rejects.toThrow("disk full");

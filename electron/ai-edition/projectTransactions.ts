@@ -372,7 +372,18 @@ export class ProjectTransactionStore {
 	}
 	private async write(contents: string) {
 		const temp = `${this.filePath}.tmp-${randomUUID()}`;
-		let renamed = false;
+		let stage: "staging" | "renamed" | "synced" = "staging";
+		const transition = (next: "renamed" | "synced") => {
+			if (
+				(stage === "staging" && next === "renamed") ||
+				(stage === "renamed" && next === "synced")
+			) {
+				stage = next;
+				return true;
+			}
+			console.warn("[project-write] Illegal transition", { stage, next });
+			return false;
+		};
 		try {
 			const handle = await fs.open(temp, "wx", 0o600);
 			try {
@@ -383,7 +394,7 @@ export class ProjectTransactionStore {
 			}
 			await this.options.fault?.("before-rename");
 			await fs.rename(temp, this.filePath);
-			renamed = true;
+			transition("renamed");
 			await this.options.fault?.("after-rename");
 			// Node 22 FileHandle.sync requests OS persistence; it is not a device
 			// power-loss guarantee. Unsupported directory sync fails explicitly.
@@ -394,9 +405,10 @@ export class ProjectTransactionStore {
 			} finally {
 				await directory.close();
 			}
+			transition("synced");
 			await this.options.fault?.("after-directory-sync");
 		} catch (error) {
-			if (renamed)
+			if (stage !== "staging")
 				throw new ProjectTransactionError(
 					"COMMIT_UNCERTAIN",
 					"Snapshot rename succeeded; recover the request receipt before retrying",

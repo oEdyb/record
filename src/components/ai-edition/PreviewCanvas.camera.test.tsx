@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { seedProjectState } from "@/lib/ai-edition/store/projectStore.testUtils";
 import "@testing-library/jest-dom";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -68,7 +69,7 @@ function load(legacyEditor: Record<string, unknown> = {}) {
 	];
 	document.timeline.clips = [clip];
 	document.legacyEditor = { padding: 0, ...legacyEditor };
-	useProjectStore.setState({ document });
+	seedProjectState({ document });
 }
 
 function renderCanvas(cameraEditable: boolean) {

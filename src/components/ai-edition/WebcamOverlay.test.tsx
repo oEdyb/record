@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { seedProjectState } from "@/lib/ai-edition/store/projectStore.testUtils";
 import "@testing-library/jest-dom";
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
@@ -98,7 +99,7 @@ describe("WebcamOverlay (per-clip camera resolution)", () => {
 	});
 
 	it("renders the camera video while the playhead is on a clip whose asset has one", () => {
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: "proj_test",
 			document: makeDocument(),
 			revision: 1,
@@ -117,7 +118,7 @@ describe("WebcamOverlay (per-clip camera resolution)", () => {
 	});
 
 	it("renders nothing while the playhead is on a clip whose asset has no camera", () => {
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: "proj_test",
 			document: makeDocument(),
 			revision: 1,
@@ -134,7 +135,7 @@ describe("WebcamOverlay (per-clip camera resolution)", () => {
 	});
 
 	it("re-resolves the camera when the playhead moves from one clip to the other", () => {
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: "proj_test",
 			document: makeDocument(),
 			revision: 1,

@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { seedProjectState } from "@/lib/ai-edition/store/projectStore.testUtils";
 import type { AxcutDocument } from "../schema";
 import { saveEditorDefaultPreferences } from "./editingPreferences";
 import { DEFAULT_EDITOR_SETTINGS, getEditorSettings } from "./editorSettings";
@@ -90,7 +92,7 @@ const sampleDoc = {
 
 describe("useProjectStore", () => {
 	beforeEach(() => {
-		useProjectStore.setState({ transactionBusy: false, transactionSyncPending: false });
+		seedProjectState({ transactionBusy: false, transactionSyncPending: false });
 		useProjectStore.getState().clear();
 		for (const mock of Object.values(bridgeMocks)) {
 			mock.mockReset();
@@ -110,7 +112,7 @@ describe("useProjectStore", () => {
 
 	const version = { mutationIdentity: "identity", revision: "one", fileHash: "a".repeat(64) };
 	async function activate() {
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: sampleDoc.project.id,
 			document: sampleDoc,
 			status: "ready",
@@ -143,7 +145,7 @@ describe("useProjectStore", () => {
 		await expect(activateProjectTransactions(sampleDoc.project.id)).rejects.toMatchObject({
 			code: "EDITOR_BUSY",
 		});
-		useProjectStore.setState({ dirty: false });
+		seedProjectState({ dirty: false });
 		await expect(activateProjectTransactions(sampleDoc.project.id)).rejects.toMatchObject({
 			code: "CONFLICT",
 		});
@@ -416,7 +418,7 @@ describe("useProjectStore", () => {
 	it("saves a blocked local version as a new project without changing the original", async () => {
 		await activate();
 		const local = { ...sampleDoc, project: { ...sampleDoc.project, title: "Unsaved" } };
-		useProjectStore.setState({ document: local, dirty: true, transactionSyncPending: true });
+		seedProjectState({ document: local, dirty: true, transactionSyncPending: true });
 		const copy = {
 			...local,
 			project: { ...local.project, id: "copy", title: "Unsaved (recovered copy)" },
@@ -442,7 +444,7 @@ describe("useProjectStore", () => {
 	});
 	it("reloads the saved version only through the explicit local recovery choice", async () => {
 		await activate();
-		useProjectStore.setState({
+		seedProjectState({
 			document: { ...sampleDoc, project: { ...sampleDoc.project, title: "Unsaved" } },
 			dirty: true,
 			transactionSyncPending: true,
@@ -466,7 +468,7 @@ describe("useProjectStore", () => {
 	});
 	it("keeps dirty recovery state after load failure and reuses its already saved copy", async () => {
 		await activate();
-		useProjectStore.setState({ dirty: true, transactionSyncPending: true });
+		seedProjectState({ dirty: true, transactionSyncPending: true });
 		const copy = { ...sampleDoc, project: { ...sampleDoc.project, id: "copy" } };
 		bridgeMocks.importProject.mockResolvedValue({ success: true, document: copy });
 		bridgeMocks.get.mockRejectedValueOnce(new Error("load failed"));
@@ -783,7 +785,7 @@ describe("useProjectStore", () => {
 	});
 
 	it("does not publish an older save after a newer save starts", async () => {
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: "proj_test",
 			document: sampleDoc,
 			revision: 1,
@@ -828,7 +830,7 @@ describe("useProjectStore", () => {
 	});
 
 	it("rejects a background continuation after a user save starts", async () => {
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: "proj_test",
 			document: sampleDoc,
 			revision: 1,
@@ -866,7 +868,7 @@ describe("useProjectStore", () => {
 	});
 
 	it("waits for an in-flight structural edit before a workspace transition reads state", async () => {
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: "proj_test",
 			document: sampleDoc,
 			revision: 1,
@@ -902,7 +904,7 @@ describe("useProjectStore", () => {
 	});
 
 	it("rejects a background continuation after an asset mutation starts", async () => {
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: "proj_test",
 			document: sampleDoc,
 			revision: 1,
@@ -930,7 +932,7 @@ describe("useProjectStore", () => {
 	});
 
 	it("retries a background document patch against the latest user edit", async () => {
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: "proj_test",
 			document: sampleDoc,
 			revision: 1,
@@ -972,7 +974,7 @@ describe("useProjectStore", () => {
 	});
 
 	it("coalesces a background patch into existing undo snapshots", async () => {
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: "proj_test",
 			document: sampleDoc,
 			revision: 1,
@@ -1003,7 +1005,7 @@ describe("useProjectStore", () => {
 	});
 
 	it("coalesces a no-op background patch into a pending redo snapshot", async () => {
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: "proj_test",
 			document: sampleDoc,
 			revision: 1,
@@ -1048,7 +1050,7 @@ describe("useProjectStore", () => {
 			...document,
 			assets: document.assets.filter((asset) => asset.recordingImportId !== "recording-1"),
 		});
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: "proj_test",
 			document: partialImport,
 			revision: 1,
@@ -1106,7 +1108,7 @@ describe("useProjectStore", () => {
 	});
 
 	it("waits for an in-flight asset mutation before applying a document patch", async () => {
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: "proj_test",
 			document: sampleDoc,
 			revision: 1,
@@ -1142,7 +1144,7 @@ describe("useProjectStore", () => {
 	});
 
 	it("does not publish a completed save after the user switches projects", async () => {
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: "proj_test",
 			document: sampleDoc,
 			revision: 1,
@@ -1165,7 +1167,7 @@ describe("useProjectStore", () => {
 			...sampleDoc,
 			project: { ...sampleDoc.project, id: "proj_other", title: "Other" },
 		};
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: "proj_other",
 			document: otherDocument,
 			revision: 2,
@@ -1218,7 +1220,7 @@ describe("useProjectStore", () => {
 	});
 
 	it("loadLatestProject clears an earlier startup error when retry returns empty", async () => {
-		useProjectStore.setState({ status: "error", error: "EACCES" });
+		seedProjectState({ status: "error", error: "EACCES" });
 		bridgeMocks.getLatest.mockResolvedValue({ success: true });
 
 		await useProjectStore.getState().loadLatestProject();
@@ -1232,7 +1234,7 @@ describe("useProjectStore", () => {
 	});
 
 	it("loadLatestProject preserves an open document when latest is empty", async () => {
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: sampleDoc.project.id,
 			document: sampleDoc,
 			status: "ready",
@@ -1250,7 +1252,7 @@ describe("useProjectStore", () => {
 	});
 
 	it("loadLatestProject does not publish a late result after stale navigation", async () => {
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: sampleDoc.project.id,
 			document: sampleDoc,
 			revision: 7,
@@ -1281,7 +1283,7 @@ describe("useProjectStore", () => {
 			...sampleDoc,
 			project: { ...sampleDoc.project, id: "new-recording", title: "New recording" },
 		};
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: recording.project.id,
 			document: recording,
 			revision: 8,
@@ -1306,7 +1308,7 @@ describe("useProjectStore", () => {
 	});
 
 	it("does no loading work when the navigation guard is already blocked", async () => {
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: sampleDoc.project.id,
 			document: sampleDoc,
 			revision: 7,
@@ -1322,7 +1324,7 @@ describe("useProjectStore", () => {
 	});
 
 	it("restores only its owned loading status when a pending handoff blocks the response", async () => {
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: sampleDoc.project.id,
 			document: sampleDoc,
 			revision: 7,
@@ -1365,7 +1367,7 @@ describe("useProjectStore", () => {
 		"different-project",
 		"same-project",
 	])("does not replace a newer %s document after a deferred load", async (identity) => {
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: sampleDoc.project.id,
 			document: sampleDoc,
 			revision: 7,
@@ -1389,7 +1391,7 @@ describe("useProjectStore", () => {
 				title: "New recording",
 			},
 		};
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: recording.project.id,
 			document: recording,
 			revision: 8,
@@ -1404,7 +1406,7 @@ describe("useProjectStore", () => {
 	});
 
 	it("does not publish a late load failure over a newer recording", async () => {
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: sampleDoc.project.id,
 			document: sampleDoc,
 			revision: 7,
@@ -1424,7 +1426,7 @@ describe("useProjectStore", () => {
 			...sampleDoc,
 			project: { ...sampleDoc.project, id: "new-recording" },
 		};
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: recording.project.id,
 			document: recording,
 			revision: 8,
@@ -1444,7 +1446,7 @@ describe("useProjectStore", () => {
 		["status", { status: "error" as const, error: "New failure" }],
 		["error", { error: "New warning" }],
 	] as const)("does not restore canceled loading status over a newer %s", async (_field, change) => {
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: sampleDoc.project.id,
 			document: sampleDoc,
 			revision: 7,
@@ -1462,17 +1464,26 @@ describe("useProjectStore", () => {
 		const loading = useProjectStore.getState().loadProject("library-project", {
 			canApply: () => canApply,
 		});
-		useProjectStore.setState(change);
+		seedProjectState(change);
 		const published = useProjectStore.getState();
 		canApply = false;
 		finishLoad();
 		await loading;
-		expect(useProjectStore.getState()).toBe(published);
+		const settled = useProjectStore.getState();
+		if (published.status === "loading") {
+			expect({ ...settled, lifecycle: published.lifecycle, status: published.status }).toEqual(
+				published,
+			);
+			expect(settled.status).toBe("ready");
+			expect(settled.document).toBe(published.document);
+			expect(settled.lifecycle.editing).toBe(published.lifecycle.editing);
+			expect(settled.lifecycle.draft).toBe(published.lifecycle.draft);
+		} else expect(settled).toBe(published);
 		await waitForProjectMutations(sampleDoc.project.id);
 	});
 
 	it("does not restore old status over a newer pending load of the same initial project", async () => {
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: sampleDoc.project.id,
 			document: sampleDoc,
 			revision: 7,
@@ -1522,7 +1533,7 @@ describe("useProjectStore", () => {
 	});
 
 	it("does not restore canceled loading status over a newer pending project creation", async () => {
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: sampleDoc.project.id,
 			document: sampleDoc,
 			revision: 7,
@@ -1567,7 +1578,7 @@ describe("useProjectStore", () => {
 	});
 
 	it("addAsset replaces the document and bumps revision", async () => {
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: "proj_test",
 			document: sampleDoc,
 			revision: 1,
@@ -1596,7 +1607,7 @@ describe("useProjectStore", () => {
 	});
 
 	it("addAsset resolves an independent camera for every asset added, not just the first", async () => {
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: "proj_test",
 			document: sampleDoc,
 			revision: 1,
@@ -1667,7 +1678,7 @@ describe("useProjectStore", () => {
 		// `cameraTrackSchema.offsetMs` is an int. Unrounded, the document failed
 		// validation, the catch below treated it as a lookup failure, and a
 		// recording that HAD a camera silently lost it.
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: "proj_test",
 			document: sampleDoc,
 			revision: 1,
@@ -1702,7 +1713,7 @@ describe("useProjectStore", () => {
 	});
 
 	it("addAsset stays silent (no toast) when a plain imported video has no camera", async () => {
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: "proj_test",
 			document: sampleDoc,
 			revision: 1,
@@ -1734,7 +1745,7 @@ describe("useProjectStore", () => {
 	});
 
 	it("addAsset toasts when the camera lookup itself throws", async () => {
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: "proj_test",
 			document: sampleDoc,
 			revision: 1,
@@ -1768,7 +1779,7 @@ describe("useProjectStore", () => {
 	});
 
 	it("clear resets the store", async () => {
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: "proj_test",
 			document: sampleDoc,
 			revision: 5,
@@ -1782,6 +1793,123 @@ describe("useProjectStore", () => {
 			revision: 0,
 			status: "idle",
 			error: null,
+		});
+	});
+	it("rejects an unguarded load completion after Clear", async () => {
+		let finish!: (value: { success: boolean; document: AxcutDocument }) => void;
+		bridgeMocks.get.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finish = resolve;
+				}),
+		);
+		const loading = useProjectStore.getState().loadProject(sampleDoc.project.id);
+		useProjectStore.getState().clear();
+		finish({ success: true, document: sampleDoc });
+		await loading;
+		expect(useProjectStore.getState()).toMatchObject({
+			projectId: null,
+			document: null,
+			status: "idle",
+		});
+	});
+	it("rejects an older unguarded load after a newer load completes", async () => {
+		let finish!: (value: { success: boolean; document: AxcutDocument }) => void;
+		const newer = { ...sampleDoc, project: { ...sampleDoc.project, id: "newer" } };
+		bridgeMocks.get
+			.mockImplementationOnce(
+				() =>
+					new Promise((resolve) => {
+						finish = resolve;
+					}),
+			)
+			.mockResolvedValueOnce({ success: true, document: newer });
+		const loading = useProjectStore.getState().loadProject(sampleDoc.project.id);
+		await useProjectStore.getState().loadProject("newer");
+		finish({ success: true, document: sampleDoc });
+		await loading;
+		expect(useProjectStore.getState().document).toEqual(newer);
+	});
+	it("does not publish an old save into a new opening of the same project", async () => {
+		seedProjectState({
+			projectId: sampleDoc.project.id,
+			document: sampleDoc,
+			status: "ready",
+			revision: 1,
+		});
+		let finish!: (value: { success: boolean; document: AxcutDocument }) => void;
+		bridgeMocks.save.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finish = resolve;
+				}),
+		);
+		const old = { ...sampleDoc, project: { ...sampleDoc.project, title: "Old save" } };
+		const saving = useProjectStore.getState().saveDocument(old);
+		await vi.waitFor(() => expect(finish).toBeDefined());
+		useProjectStore.getState().clear();
+		const reopened = { ...sampleDoc, project: { ...sampleDoc.project, title: "Reopened" } };
+		bridgeMocks.get.mockResolvedValueOnce({ success: true, document: reopened });
+		await useProjectStore.getState().loadProject(sampleDoc.project.id);
+		finish({ success: true, document: old });
+		expect(await saving).toBe(false);
+		expect(useProjectStore.getState().document).toEqual(reopened);
+		expect(useProjectStore.getState().dirty).toBe(false);
+	});
+	it("does not navigate from a stale create after another project opens", async () => {
+		let finish!: (value: { success: boolean; document: AxcutDocument }) => void;
+		bridgeMocks.create.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finish = resolve;
+				}),
+		);
+		const creating = useProjectStore.getState().createProject("Old create");
+		const newer = { ...sampleDoc, project: { ...sampleDoc.project, id: "newer" } };
+		bridgeMocks.get.mockResolvedValueOnce({ success: true, document: newer });
+		await useProjectStore.getState().loadProject("newer");
+		finish({ success: true, document: sampleDoc });
+		await creating;
+		expect(useProjectStore.getState().document).toEqual(newer);
+	});
+	it("retains guarded save ownership when navigation or Clear tries to abandon its receipt", async () => {
+		await activate();
+		let finish!: (value: ReturnType<typeof committed>) => void;
+		bridgeMocks.commit.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finish = resolve;
+				}),
+		);
+		const saving = useProjectStore.getState().saveDocument(sampleDoc);
+		await vi.waitFor(() => expect(finish).toBeDefined());
+		await expect(useProjectStore.getState().loadProject("other")).rejects.toMatchObject({
+			code: "EDITOR_BUSY",
+		});
+		useProjectStore.getState().clear();
+		expect(useProjectStore.getState().projectId).toBe(sampleDoc.project.id);
+		const requestId = bridgeMocks.commit.mock.calls[0][2].requestId;
+		finish(committed(sampleDoc, requestId));
+		expect(await saving).toBe(true);
+	});
+	it("publishes a live document and its dirty checkpoint in one notification", () => {
+		seedProjectState({
+			projectId: sampleDoc.project.id,
+			document: sampleDoc,
+			status: "ready",
+			revision: 1,
+		});
+		const next = { ...sampleDoc, project: { ...sampleDoc.project, title: "One atomic gesture" } };
+		const observed: Array<{ document: AxcutDocument | null; dirty: boolean }> = [];
+		const unsubscribe = useProjectStore.subscribe((state) => {
+			observed.push({ document: state.document, dirty: state.dirty });
+		});
+		useProjectStore.getState().setDocumentLive(next);
+		unsubscribe();
+		expect(observed).toEqual([{ document: next, dirty: true }]);
+		expect(useProjectStore.getState().lifecycle.draft.base).toEqual({
+			document: next,
+			before: sampleDoc,
 		});
 	});
 });

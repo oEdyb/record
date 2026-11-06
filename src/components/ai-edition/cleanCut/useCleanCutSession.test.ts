@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
+
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createEmptyDocument } from "@/lib/ai-edition/schema";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
+import { seedProjectState } from "@/lib/ai-edition/store/projectStore.testUtils";
 import { useCleanCutStore } from "@/lib/cleanCut/store";
 import type { CleanCutBridge, CleanCutSnapshot } from "@/lib/cleanCut/types";
 import { useCleanCutSession } from "./useCleanCutSession";
@@ -35,7 +37,7 @@ const clip = {
 beforeEach(() => {
 	const document = createEmptyDocument({ title: "Take", projectId: "p1" });
 	document.timeline.clips = [clip];
-	useProjectStore.setState({ document });
+	seedProjectState({ document });
 	useCleanCutStore.getState().setEnabled(false, null);
 });
 afterEach(() => {

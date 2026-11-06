@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { seedProjectState } from "@/lib/ai-edition/store/projectStore.testUtils";
 import "@testing-library/jest-dom";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -44,7 +45,7 @@ beforeEach(() => {
 		},
 	];
 	document.timeline.clips = [clip];
-	useProjectStore.setState({ document });
+	seedProjectState({ document });
 	actions.setLive.mockClear();
 	actions.commit.mockClear();
 });

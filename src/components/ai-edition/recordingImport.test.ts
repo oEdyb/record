@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { recordingInterruptions } from "@/lib/ai-edition/document/recordingInterruptions";
 import { type AxcutAsset, type AxcutDocument, createEmptyDocument } from "@/lib/ai-edition/schema";
 import { getEditorSettings } from "@/lib/ai-edition/store/editorSettings";
 import { type ProjectState, useProjectStore } from "@/lib/ai-edition/store/projectStore";
+import { seedProjectState } from "@/lib/ai-edition/store/projectStore.testUtils";
 import { toKlipptMediaUrl } from "@/lib/localMediaUrl";
 import { importPendingRecording, isPendingRecordingImportInProgress } from "./recordingImport";
 
@@ -21,7 +23,7 @@ vi.mock("@/lib/ai-edition/timeline/duration", () => ({ probeVideoDuration, probe
 
 const createProject = vi.fn<ProjectState["createProject"]>(async (title) => {
 	const document = createEmptyDocument({ title, projectId: "test-project" });
-	useProjectStore.setState({ projectId: document.project.id, document });
+	seedProjectState({ projectId: document.project.id, document });
 	return document;
 });
 const addAsset = vi.fn<ProjectState["addAsset"]>(async () => null);
@@ -33,7 +35,7 @@ const applyDocumentPatch = vi.fn<ProjectState["applyDocumentPatch"]>(async (proj
 	if (!current || current.project.id !== projectId) return "project-changed";
 	const document = patch(current);
 	if (document === current) return "unchanged";
-	useProjectStore.setState({ document });
+	seedProjectState({ document });
 	return "applied";
 });
 const loadProject = vi.fn<ProjectState["loadProject"]>(async () => undefined);
@@ -98,7 +100,7 @@ describe("importPendingRecording", () => {
 				cameraTrack: null,
 			};
 			const document = useProjectStore.getState().document!;
-			useProjectStore.setState({ document: { ...document, assets: [asset] } });
+			seedProjectState({ document: { ...document, assets: [asset] } });
 			return asset;
 		});
 		await importPendingRecording();
@@ -119,7 +121,7 @@ describe("importPendingRecording", () => {
 		probeVideoDimensions.mockResolvedValue(null);
 		getRecordingData.mockResolvedValue({ version: 2, provider: "native", samples: [], assets: [] });
 		saveDocumentAsEdit.mockImplementation(async (document) => {
-			useProjectStore.setState({ document });
+			seedProjectState({ document });
 			return true;
 		});
 		applyDocumentPatch.mockImplementation(async (projectId, patch) => {
@@ -127,10 +129,10 @@ describe("importPendingRecording", () => {
 			if (!current || current.project.id !== projectId) return "project-changed";
 			const document = patch(current);
 			if (document === current) return "unchanged";
-			useProjectStore.setState({ document });
+			seedProjectState({ document });
 			return "applied";
 		});
-		useProjectStore.setState({
+		seedProjectState({
 			document: null,
 			revision: 0,
 			createProject,
@@ -187,7 +189,7 @@ describe("importPendingRecording", () => {
 		};
 		addAsset.mockImplementationOnce(async () => {
 			const document = useProjectStore.getState().document!;
-			useProjectStore.setState({ document: { ...document, assets: [asset] } });
+			seedProjectState({ document: { ...document, assets: [asset] } });
 			return asset;
 		});
 		probeVideoDimensions.mockResolvedValueOnce({ width: 1920, height: 1200 });
@@ -208,7 +210,7 @@ describe("importPendingRecording", () => {
 		};
 		addAsset.mockImplementationOnce(async () => {
 			const document = useProjectStore.getState().document!;
-			useProjectStore.setState({ document: { ...document, assets: [asset] } });
+			seedProjectState({ document: { ...document, assets: [asset] } });
 			return asset;
 		});
 		let resolveDuration!: (duration: number) => void;
@@ -256,7 +258,7 @@ describe("importPendingRecording", () => {
 		};
 		addAsset.mockImplementationOnce(async () => {
 			const document = useProjectStore.getState().document!;
-			useProjectStore.setState({ document: { ...document, assets: [asset] } });
+			seedProjectState({ document: { ...document, assets: [asset] } });
 			return asset;
 		});
 		probeVideoDuration.mockResolvedValueOnce(duration);
@@ -272,7 +274,7 @@ describe("importPendingRecording", () => {
 		stubElectronApi("/recordings/recording-1.webm");
 		addAsset.mockImplementationOnce(async () => {
 			const document = createEmptyDocument({ title: "Test", projectId: "test-project" });
-			useProjectStore.setState({
+			seedProjectState({
 				document: {
 					...document,
 					assets: [
@@ -337,7 +339,7 @@ describe("importPendingRecording", () => {
 					},
 				};
 				const document = createEmptyDocument({ title: "Test", projectId: "test-project" });
-				useProjectStore.setState({
+				seedProjectState({
 					document: {
 						...document,
 						assets: [asset],
@@ -360,7 +362,7 @@ describe("importPendingRecording", () => {
 				};
 				const document = useProjectStore.getState().document;
 				if (!document) throw new Error("Expected the first imported clip document");
-				useProjectStore.setState({
+				seedProjectState({
 					document: { ...document, assets: [...document.assets, asset] },
 				});
 				return asset;
@@ -425,7 +427,7 @@ describe("importPendingRecording", () => {
 					},
 				};
 				const document = createEmptyDocument({ title: "Test", projectId: "test-project" });
-				useProjectStore.setState({ document: { ...document, assets: [asset] } });
+				seedProjectState({ document: { ...document, assets: [asset] } });
 				return asset;
 			})
 			.mockImplementationOnce(async () => {
@@ -443,7 +445,7 @@ describe("importPendingRecording", () => {
 				};
 				const document = useProjectStore.getState().document;
 				if (!document) throw new Error("Expected the first imported clip document");
-				useProjectStore.setState({
+				seedProjectState({
 					document: { ...document, assets: [...document.assets, asset] },
 				});
 				return asset;
@@ -489,7 +491,7 @@ describe("importPendingRecording", () => {
 				originalPath: screenVideoPath,
 				cameraTrack: null,
 			};
-			useProjectStore.setState({ document: { ...document, assets: [asset] } });
+			seedProjectState({ document: { ...document, assets: [asset] } });
 			return asset;
 		});
 
@@ -583,7 +585,7 @@ describe("importPendingRecording", () => {
 		};
 		addAsset.mockImplementationOnce(async () => {
 			const document = createEmptyDocument({ title: "Test", projectId: "test-project" });
-			useProjectStore.setState({ document: { ...document, assets: [asset] } });
+			seedProjectState({ document: { ...document, assets: [asset] } });
 			return asset;
 		});
 		getRecordingData.mockResolvedValueOnce({
@@ -630,7 +632,7 @@ describe("importPendingRecording", () => {
 		};
 		addAsset.mockImplementationOnce(async () => {
 			const document = createEmptyDocument({ title: "Test", projectId: "test-project" });
-			useProjectStore.setState({ document: { ...document, assets: [asset] } });
+			seedProjectState({ document: { ...document, assets: [asset] } });
 			return asset;
 		});
 		getRecordingData.mockResolvedValueOnce({
@@ -680,7 +682,7 @@ describe("importPendingRecording", () => {
 		};
 		addAsset.mockImplementationOnce(async () => {
 			const document = createEmptyDocument({ title: "Test", projectId: "test-project" });
-			useProjectStore.setState({ document: { ...document, assets: [asset] } });
+			seedProjectState({ document: { ...document, assets: [asset] } });
 			return asset;
 		});
 		getRecordingData.mockResolvedValueOnce({
@@ -745,7 +747,7 @@ describe("importPendingRecording", () => {
 		};
 		addAsset.mockImplementationOnce(async () => {
 			const document = createEmptyDocument({ title: "Test", projectId: "test-project" });
-			useProjectStore.setState({ document: { ...document, assets: [asset] } });
+			seedProjectState({ document: { ...document, assets: [asset] } });
 			return asset;
 		});
 		getRecordingData.mockResolvedValueOnce({
@@ -802,7 +804,7 @@ describe("importPendingRecording", () => {
 		};
 		addAsset.mockImplementationOnce(async () => {
 			const document = createEmptyDocument({ title: "Test", projectId: "test-project" });
-			useProjectStore.setState({ document: { ...document, assets: [asset] } });
+			seedProjectState({ document: { ...document, assets: [asset] } });
 			return asset;
 		});
 		getRecordingData.mockResolvedValueOnce({
@@ -856,7 +858,7 @@ describe("importPendingRecording", () => {
 			};
 			addAsset.mockImplementationOnce(async () => {
 				const document = createEmptyDocument({ title: "Test", projectId: "test-project" });
-				useProjectStore.setState({ document: { ...document, assets: [asset] } });
+				seedProjectState({ document: { ...document, assets: [asset] } });
 				return asset;
 			});
 			getRecordingData.mockReturnValueOnce(new Promise(() => undefined));
@@ -900,14 +902,14 @@ describe("importPendingRecording", () => {
 		};
 		addAsset.mockImplementationOnce(async () => {
 			const document = createEmptyDocument({ title: "Before edit", projectId: "test-project" });
-			useProjectStore.setState({ document: { ...document, assets: [asset] } });
+			seedProjectState({ document: { ...document, assets: [asset] } });
 			return asset;
 		});
 		applyDocumentPatch.mockImplementationOnce(async (projectId, patch) => {
 			const current = useProjectStore.getState().document!;
 			const latest = { ...current, project: { ...current.project, title: "Edited before commit" } };
 			expect(projectId).toBe(latest.project.id);
-			useProjectStore.setState({ document: patch(latest) });
+			seedProjectState({ document: patch(latest) });
 			return "applied";
 		});
 		const importing = importPendingRecording();
@@ -947,7 +949,7 @@ describe("importPendingRecording", () => {
 		const beforeImport = createEmptyDocument({ title: "Conflict", projectId: "test-project" });
 		let persisted = beforeImport;
 		loadProject.mockImplementation(async () => {
-			useProjectStore.setState({ projectId: "test-project", document: persisted });
+			seedProjectState({ projectId: "test-project", document: persisted });
 		});
 		const asset: AxcutAsset = {
 			id: "conflicted-asset",
@@ -964,7 +966,7 @@ describe("importPendingRecording", () => {
 				assets: [asset],
 				project: { ...beforeImport.project, primaryAssetId: asset.id },
 			};
-			useProjectStore.setState({ document: persisted });
+			seedProjectState({ document: persisted });
 			return asset;
 		});
 		applyDocumentPatch.mockResolvedValueOnce("conflict");
@@ -1027,7 +1029,7 @@ describe("importPendingRecording", () => {
 		};
 		addAsset.mockImplementationOnce(async () => {
 			const document = createEmptyDocument({ title: "Test", projectId: "test-project" });
-			useProjectStore.setState({ document: { ...document, assets: [asset] } });
+			seedProjectState({ document: { ...document, assets: [asset] } });
 			return asset;
 		});
 
@@ -1036,7 +1038,7 @@ describe("importPendingRecording", () => {
 		expect(getAudioPeaks).not.toHaveBeenCalled();
 		expect(applyDocumentPatch).toHaveBeenCalledTimes(1);
 		expect(api.setCurrentRecordingSession).toHaveBeenCalledWith(null);
-		useProjectStore.setState({ revision: 1 });
+		seedProjectState({ revision: 1 });
 		finishMicrophone?.({ success: true, peaks: null });
 		await Promise.resolve();
 		expect(applyDocumentPatch).toHaveBeenCalledTimes(1);
@@ -1097,7 +1099,7 @@ describe("importPendingRecording", () => {
 			],
 		};
 		loadProject.mockImplementationOnce(async () => {
-			useProjectStore.setState({ projectId: "existing-project", document: existing });
+			seedProjectState({ projectId: "existing-project", document: existing });
 		});
 		const newAsset: AxcutAsset = {
 			id: "new-asset",
@@ -1107,7 +1109,7 @@ describe("importPendingRecording", () => {
 			cameraTrack: null,
 		};
 		addAsset.mockImplementationOnce(async () => {
-			useProjectStore.setState({
+			seedProjectState({
 				document: { ...existing, assets: [...existing.assets, newAsset] },
 			});
 			return newAsset;

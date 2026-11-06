@@ -230,7 +230,9 @@ async function writeFileAtomically(
 export class DocumentService {
 	private readonly projectsRoot: string;
 	private readonly mediaRegistryDir: string;
-	private legacyMigration: Promise<void> | null = null;
+	private legacyMigration:
+		| { kind: "unstarted" }
+		| { kind: "running" | "complete" | "failed"; promise: Promise<void> } = { kind: "unstarted" };
 	/** Tail of the in-flight save chain per project id — see writeProject. */
 	private static readonly writeQueues = new Map<string, Promise<unknown>>();
 
@@ -265,8 +267,36 @@ export class DocumentService {
 	// rollback copy. Klippt validates and copies it to the canonical extension,
 	// then all future writes target only the `.klippt` file.
 	private migrateLegacyExtensions(): Promise<void> {
-		this.legacyMigration ??= this.copyLegacyProjectsToCanonicalExtension();
-		return this.legacyMigration;
+		if (this.legacyMigration.kind !== "unstarted") return this.legacyMigration.promise;
+		const promise = this.copyLegacyProjectsToCanonicalExtension();
+		this.transitionMigration({ type: "begin", promise });
+		void promise.then(
+			() => this.transitionMigration({ type: "complete", promise }),
+			() => this.transitionMigration({ type: "failed", promise }),
+		);
+		return promise;
+	}
+	private transitionMigration(event: {
+		type: "begin" | "complete" | "failed";
+		promise: Promise<void>;
+	}): boolean {
+		const state = this.legacyMigration;
+		if (
+			event.type === "begin"
+				? state.kind !== "unstarted"
+				: state.kind !== "running" || state.promise !== event.promise
+		) {
+			console.warn("[project-migration] Illegal transition", {
+				state: state.kind,
+				event: event.type,
+			});
+			return false;
+		}
+		this.legacyMigration = {
+			kind: event.type === "begin" ? "running" : event.type,
+			promise: event.promise,
+		};
+		return true;
 	}
 
 	private async copyLegacyProjectsToCanonicalExtension(): Promise<void> {

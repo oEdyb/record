@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { seedProjectState } from "@/lib/ai-edition/store/projectStore.testUtils";
 import "@testing-library/jest-dom";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useEffect } from "react";
@@ -147,7 +148,7 @@ function recordingDocument(): AxcutDocument {
 }
 
 function loadDocument(document: AxcutDocument) {
-	useProjectStore.setState({ document, projectId: document.project.id, status: "ready" });
+	seedProjectState({ document, projectId: document.project.id, status: "ready" });
 }
 
 beforeEach(() => {

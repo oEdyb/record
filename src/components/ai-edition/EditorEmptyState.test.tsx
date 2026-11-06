@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { seedProjectState } from "@/lib/ai-edition/store/projectStore.testUtils";
 import "@testing-library/jest-dom";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactElement } from "react";
@@ -105,7 +106,7 @@ describe("EditorEmptyState (new editor)", () => {
 	});
 
 	it("shows the import button when a project is loaded but has no asset", () => {
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: "proj_test",
 			document: sampleDoc,
 			revision: 1,
@@ -136,7 +137,7 @@ describe("EditorEmptyState (new editor)", () => {
 	});
 
 	it("imports a video: file picker → addAsset on the existing project", async () => {
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: "proj_test",
 			document: sampleDoc,
 			revision: 1,

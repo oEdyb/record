@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
+
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { seedProjectState } from "@/lib/ai-edition/store/projectStore.testUtils";
 import { createEmptyDocument } from "../schema";
 import { loadEditingPreferences } from "./editingPreferences";
 import { getEditorSettings } from "./editorSettings";
@@ -25,7 +27,7 @@ describe("useEditorSettings preferences", () => {
 		bridgeMocks.save.mockReset();
 		bridgeMocks.save.mockImplementation(async (document) => ({ success: true, document }));
 		const document = createEmptyDocument({ projectId: "project", title: "Project" });
-		useProjectStore.setState({
+		seedProjectState({
 			projectId: document.project.id,
 			document,
 			revision: 0,
@@ -103,7 +105,7 @@ describe("useEditorSettings preferences", () => {
 		await vi.waitFor(() => expect(bridgeMocks.save).toHaveBeenCalledTimes(1));
 		const otherDocument = createEmptyDocument({ projectId: "other", title: "Other" });
 		act(() => {
-			useProjectStore.setState({ projectId: "other", document: otherDocument });
+			seedProjectState({ projectId: "other", document: otherDocument });
 		});
 
 		finishSave?.();

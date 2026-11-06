@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { seedProjectState } from "@/lib/ai-edition/store/projectStore.testUtils";
 import "@testing-library/jest-dom";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
@@ -39,7 +40,7 @@ function TestShell({ children }: { children: ReactNode }) {
 
 describe("TransportBar reads the playhead from the store", () => {
 	beforeEach(() => {
-		useProjectStore.setState({ currentTimeSec: 0 });
+		seedProjectState({ currentTimeSec: 0 });
 	});
 
 	afterEach(() => {
@@ -110,7 +111,7 @@ describe("TransportBar reads the playhead from the store", () => {
 	// A timeline scrub drag writes the store on a rAF, so for the frame in between the
 	// pointer position is only in `overrideTimeSec` — it has to win over the store.
 	it("prefers the live scrub override over the store value", () => {
-		useProjectStore.setState({ currentTimeSec: 12.3 });
+		seedProjectState({ currentTimeSec: 12.3 });
 		render(
 			<TestShell>
 				<TransportBar
@@ -128,7 +129,7 @@ describe("TransportBar reads the playhead from the store", () => {
 	});
 
 	it("shows compressed playback time while the store keeps raw document time", () => {
-		useProjectStore.setState({ currentTimeSec: 6 });
+		seedProjectState({ currentTimeSec: 6 });
 		render(
 			<TestShell>
 				<TransportBar
@@ -156,7 +157,7 @@ describe("review insertion marker", () => {
 	});
 
 	it("marks where a new clip goes while paused and hides during playback", () => {
-		useProjectStore.setState({ currentTimeSec: 12 });
+		seedProjectState({ currentTimeSec: 12 });
 		const boundary = vi.fn(() => 30);
 		const view = render(
 			<TestShell>
@@ -202,7 +203,7 @@ describe("review insertion marker", () => {
 
 describe("le drag de la barre de progression est coalescé en rAF", () => {
 	beforeEach(() => {
-		useProjectStore.setState({ currentTimeSec: 0 });
+		seedProjectState({ currentTimeSec: 0 });
 	});
 
 	afterEach(() => {

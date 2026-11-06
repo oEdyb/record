@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
+
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toFileUrl } from "@/components/video-editor/projectPersistence";
+import { seedProjectState } from "@/lib/ai-edition/store/projectStore.testUtils";
 import { type AxcutDocument, createEmptyDocument } from "../schema";
 import { useProjectStore } from "./projectStore";
 import { useAssetDimensionBackfill } from "./useAssetDimensionBackfill";
@@ -47,7 +49,7 @@ function documentWithAsset(video: AxcutDocument["assets"][number]["video"]): Axc
 }
 
 function load(document: AxcutDocument) {
-	useProjectStore.setState({
+	seedProjectState({
 		projectId: "proj_test",
 		document,
 		revision: 1,

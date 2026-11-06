@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { seedProjectState } from "@/lib/ai-edition/store/projectStore.testUtils";
 import "@testing-library/jest-dom";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -72,7 +73,7 @@ beforeEach(() => {
 	pause = vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {
 		/* jsdom has no audio device. */
 	});
-	useProjectStore.setState({
+	seedProjectState({
 		document: fixture(),
 		projectId: "audio_preview",
 		playing: false,
@@ -136,7 +137,7 @@ it("blocks video until the requested stem and media element are ready, and after
 });
 it("seeks while paused, follows the raw playback clock at 1x, and pauses on unmount", async () => {
 	const { audio, unmount } = await ready();
-	act(() => useProjectStore.setState({ currentTimeSec: 4 }));
+	act(() => seedProjectState({ currentTimeSec: 4 }));
 	tick();
 	expect(audio.currentTime).toBe(4);
 	act(() => {
@@ -158,7 +159,7 @@ it("discards obsolete stem responses", async () => {
 	act(() => {
 		const doc = fixture();
 		doc.timeline.audioClips![0].gain = 0.5;
-		useProjectStore.setState({ document: doc });
+		seedProjectState({ document: doc });
 	});
 	await act(async () => responses[1]({ sourceUrl: "file:///new.wav" }));
 	await act(async () => responses[0]({ sourceUrl: "file:///old.wav" }));
@@ -232,7 +233,7 @@ it("backs off while paused and wakes immediately for a seek or playback", async 
 		tick();
 		expect(frames.size).toBe(0);
 
-		act(() => useProjectStore.setState({ currentTimeSec: 4 }));
+		act(() => seedProjectState({ currentTimeSec: 4 }));
 		expect(frames.size).toBe(1);
 		tick();
 		expect(audio.currentTime).toBe(4);
