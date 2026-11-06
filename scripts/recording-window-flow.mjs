@@ -730,29 +730,62 @@ w.loadURL('data:text/html,'+encodeURIComponent('<title>Private recording fixture
 					process.kill(app.process().pid, "SIGKILL");
 					await delay(2000);
 					app = await launch();
-					const recoveredHud = await page("hud-overlay");
-					let session;
-					for (let i = 0; i < 200; i++) {
-						session = (
-							await recoveredHud.evaluate(() => window.electronAPI.getCurrentRecordingSession())
-						).session;
-						if (session?.createdAt === recordingId) break;
-						await delay(100);
-					}
-					assert.equal(
-						session?.createdAt,
-						recordingId,
-						"Startup did not restore the crashed private take",
-					);
-					assert(
-						session.clips.some((clip) => !clip.removed),
-						"No recoverable clip",
-					);
-					for (const clip of session.clips.filter((clip) => !clip.removed)) verifyClip(clip);
 					const editor = await page("editor");
 					await editor
 						.getByRole("button", { name: "Save video", exact: true })
 						.waitFor({ timeout: 30000 });
+					const recovered = await editor.evaluate(() =>
+						window.electronAPI.invokeNativeBridge({
+							version: 1,
+							requestId: "crash-recovery-proof",
+							domain: "aiEdition",
+							action: "document.getLatest",
+							payload: {},
+						}),
+					);
+					const document = recovered.data?.document;
+					assert(document, "Startup did not persist the recovered take in the review project");
+					const clips = document.assets
+						.filter((asset) => asset.recordingImportId === `recording-${recordingId}`)
+						.map((asset) => {
+							const match = path.basename(asset.originalPath).match(/clip-(\d{4})\.mp4$/);
+							assert(
+								match && Number.isFinite(asset.durationSec) && asset.durationSec > 0,
+								"Invalid recovered clip identity/duration",
+							);
+							return {
+								index: Number(match[1]) - 1,
+								screenVideoPath: asset.originalPath,
+								durationMs: Math.round(asset.durationSec * 1000),
+								webcamVideoPath: asset.cameraTrack?.sourcePath,
+								webcamOffsetMs: asset.cameraTrack?.offsetMs,
+								microphoneAudioPath: asset.microphoneAudioPath,
+								microphoneAudioOffsetMs: asset.microphoneAudioOffsetMs,
+							};
+						});
+					assert(clips.length > 0, "No recoverable clip");
+					const directory = path.join(run, "profile", "recordings");
+					const expected = (await readdir(directory))
+						.filter((file) => new RegExp(`^recording-${recordingId}-clip-\\d{4}\\.mp4$`).test(file))
+						.map((file) => path.join(directory, file))
+						.sort();
+					assert(expected.length > 0);
+					assert.deepEqual(
+						clips.map((clip) => clip.screenVideoPath).sort(),
+						expected,
+						"Recovery omitted an original screen clip",
+					);
+					const session = {
+						schemaVersion: 2,
+						createdAt: recordingId,
+						screenVideoPath: clips[0].screenVideoPath,
+						clips,
+					};
+					for (const clip of clips) verifyClip(clip);
+					await writeFile(
+						path.join(run, "crash-recovered-project.json"),
+						JSON.stringify(document, null, 2),
+					);
 					await writeFile(
 						path.join(run, "crash-recovered-session.json"),
 						JSON.stringify(session, null, 2),

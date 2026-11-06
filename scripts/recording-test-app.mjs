@@ -7,6 +7,26 @@ import path from "node:path";
 import { _electron, chromium } from "@playwright/test";
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+export async function waitForFreshDevToolsPort(file, previous, child) {
+	for (let i = 0; i < 200; i++) {
+		if (child.exitCode !== null || child.signalCode !== null)
+			throw new Error(`Packaged app exited ${child.exitCode ?? child.signalCode}`);
+		const current = await readFile(file, "utf8").catch(() => null);
+		if (current && current !== previous) {
+			const [port, browser] = current.split("\n");
+			if (
+				/^\d+$/.test(port) &&
+				Number(port) > 0 &&
+				Number(port) <= 65535 &&
+				browser?.startsWith("/devtools/browser/")
+			)
+				return port;
+		}
+		await delay(100);
+	}
+	throw new Error("Packaged renderer debugger did not start; fuses remain unchanged");
+}
+
 export function recordingTestTarget(root, env = process.env) {
 	const executablePath = env.KLIPPT_TEST_EXECUTABLE;
 	return executablePath
@@ -124,6 +144,8 @@ export async function launchRecordingTestApp(root, args, env) {
 	])
 		delete clean[key];
 	await realpath(target.executablePath);
+	const debuggerFile = path.join(env.ELECTRON_USER_DATA_DIR, "DevToolsActivePort");
+	const previousDebugger = await readFile(debuggerFile, "utf8").catch(() => null);
 	const child = spawn(
 		target.executablePath,
 		[...args, "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0"],
@@ -138,20 +160,7 @@ export async function launchRecordingTestApp(root, args, env) {
 	let browser;
 	let aborted = false;
 	try {
-		let port;
-		for (let i = 0; i < 200; i++) {
-			if (child.exitCode !== null) throw new Error(`Packaged app exited ${child.exitCode}`);
-			try {
-				port = (
-					await readFile(path.join(env.ELECTRON_USER_DATA_DIR, "DevToolsActivePort"), "utf8")
-				).split("\n")[0];
-			} catch {
-				port = undefined;
-			}
-			if (port) break;
-			await delay(100);
-		}
-		assert(port, "Packaged renderer debugger did not start; fuses remain unchanged");
+		const port = await waitForFreshDevToolsPort(debuggerFile, previousDebugger, child);
 		assert.equal(await realpath(`/proc/${child.pid}/exe`), await realpath(target.executablePath));
 		browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
 		console.log("Testing installed executable", target.executablePath, "PID", child.pid);
