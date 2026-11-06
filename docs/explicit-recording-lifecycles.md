@@ -58,3 +58,15 @@ Repeated `wait` calls join the same promise and first deadline, including a dupl
 The main-process Windows Stop client uses `CaptureStopLifecycle`: waiting → terminating → settled, or waiting → settled on a close/error. Grace-period exit waits use the same one-shot state authority. Stale close/error/deadline completions reject/log; the retained original result cannot change. The timeout still allows the helper's own shutdown budget, escalates by exact PID, and re-reads finalized output after termination so a playable file wins over a timeout diagnosis.
 
 Unit regressions cover stale callbacks after settlement and a finalized path reported during forced termination, including listener/timer cleanup. This proves the TypeScript client on Linux. The C++ WGC/D3D/Media Foundation lifecycle is unchanged: this PC's actual `c++ -std=c++20 -fsyntax-only electron/native/wgc-capture/src/main.cpp` check fails on missing `Windows.h`. Native conversion/runtime proof requires a Windows worker.
+
+## Export publication and cancellation
+
+`PublicationLifecycle` owns preflight → rendering → final capacity drain → verification → syncing → publishing → committed → done. Rendering owns the capacity timer and one idle/checking/failed capacity substate. Failure enters cleanup and then failed or cleanup-blocked. No cleanup transition is legal after the final rename has committed: a throwing notification cannot turn a saved file into a failed export or remove it. Initialization recovery has a separate uninitialized/recovering/ready/failed owner and preserves the shared promise and existing no-retry semantics.
+
+`ExportCancellationRegistry` replaces separate active and pending-cancel maps with one per-ID state: unregistered, pending cancellation, active or cancelled. Registration consumes an early cancellation. A duplicate ID cannot replace a live controller, and cleanup must present the same controller. The existing 60-second tombstone policy, insertion-order eviction and 256-entry pending bound remain unchanged.
+
+The export UI retains its single phase, now as a discriminated state with one transition function. Begin rejects overlapping jobs; the dialog honors rejection. Backward phase messages reject/log, and active resets cannot erase the cancel owner. Completed/error payloads are coherent with their phase. The test fixture now resets through the public abandon action instead of writing mode fields directly.
+
+The Rust cancellation AtomicBool is one independent request bit and its immutable registration token has RAII cleanup; those stay unchanged. Source-copy busy is one independent on/off value for a separate operation. Neither needs an additional parallel mode value.
+
+Tests reject early publication, post-commit cleanup, duplicate IDs, wrong-controller finish and overlapping UI runs. An observer-failure filesystem regression retains the committed bytes without calling staging cleanup. Private flows exercise real native cancellation after frame progress and a read-only destination followed by permission restoration and fresh-process journal recovery. These do not establish Mac/Windows encoder runtime behavior.

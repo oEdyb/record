@@ -2,48 +2,60 @@ import { create } from "zustand";
 import type { ExportProgress } from "@/lib/exporter";
 import type { CompositorAudioMasteringResult, ExportTransactionPhase } from "@/native/contracts";
 
-/**
- * The one running export, shared by the export dialog and the editor top bar.
- *
- * The native exporter takes a snapshot of the clips and scene when it starts, so the
- * dialog can close and the editor stay usable while the file renders. Progress and the
- * final outcome live here rather than in dialog state so that closing the dialog
- * neither cancels the export nor loses its result.
- */
 export type ExportRunPhase = "idle" | "configuring" | "rendering" | "writing" | "done" | "error";
-
 export interface ExportFailureDetails {
 	phase?: ExportTransactionPhase;
 	code?: string;
 	retryable: boolean;
 }
-
-export interface ExportRunState {
-	phase: ExportRunPhase;
+type Empty = {
+	progress: null;
+	error: null;
+	errorDetails: null;
+	savedPath: null;
+	audioMastering: null;
+	cancel: null;
+};
+type Active = Omit<Empty, "progress" | "cancel"> & {
+	phase: "configuring" | "rendering" | "writing";
 	progress: ExportProgress | null;
-	error: string | null;
-	errorDetails: ExportFailureDetails | null;
-	savedPath: string | null;
-	audioMastering: CompositorAudioMasteringResult | null;
-	/** Aborts the running export. Null when nothing is running. */
-	cancel: (() => void) | null;
-	begin: (cancel: () => void) => void;
-	setPhase: (phase: ExportRunPhase) => void;
-	setProgress: (progress: ExportProgress | null) => void;
-	succeed: (result: {
-		savedPath: string;
-		audioMastering: CompositorAudioMasteringResult | null;
-	}) => void;
-	fail: (error: string, details: ExportFailureDetails | null) => void;
-	/** Returns to idle. Ignored while an export is running; cancel it first. */
-	reset: () => void;
-	/** Returns to idle unconditionally: the save picker was dismissed or the run was aborted. */
-	abandon: () => void;
-	requestCancel: () => void;
+	cancel: () => void;
+};
+type Data =
+	| (Empty & { phase: "idle" })
+	| Active
+	| (Omit<Empty, "progress" | "savedPath" | "audioMastering"> & {
+			phase: "done";
+			progress: ExportProgress | null;
+			savedPath: string;
+			audioMastering: CompositorAudioMasteringResult | null;
+	  })
+	| (Omit<Empty, "error" | "errorDetails"> & {
+			phase: "error";
+			error: string;
+			errorDetails: ExportFailureDetails | null;
+	  });
+type Result = { savedPath: string; audioMastering: CompositorAudioMasteringResult | null };
+interface Actions {
+	begin(cancel: () => void): boolean;
+	setPhase(phase: ExportRunPhase): void;
+	setProgress(progress: ExportProgress | null): void;
+	succeed(result: Result): void;
+	fail(error: string, details: ExportFailureDetails | null): void;
+	reset(): void;
+	abandon(): void;
+	requestCancel(): void;
 }
-
-const IDLE = {
-	phase: "idle" as const,
+export type ExportRunState = Data & Actions;
+type Event =
+	| { type: "begin"; cancel: () => void }
+	| { type: "phase"; phase: ExportRunPhase }
+	| { type: "progress"; progress: ExportProgress | null }
+	| { type: "succeed"; result: Result }
+	| { type: "fail"; error: string; details: ExportFailureDetails | null }
+	| { type: "reset" | "abandon" | "cancel" };
+const IDLE: Empty & { phase: "idle" } = {
+	phase: "idle",
 	progress: null,
 	error: null,
 	errorDetails: null,
@@ -51,38 +63,100 @@ const IDLE = {
 	audioMastering: null,
 	cancel: null,
 };
-
 export function isExportRunActive(phase: ExportRunPhase): boolean {
 	return phase === "configuring" || phase === "rendering" || phase === "writing";
 }
+function active(data: Data): data is Active {
+	return isExportRunActive(data.phase);
+}
 
-export const useExportRunStore = create<ExportRunState>((set, get) => ({
-	...IDLE,
-	begin: (cancel) => set({ ...IDLE, phase: "configuring", cancel }),
-	setPhase: (phase) => set({ phase }),
-	setProgress: (progress) => set({ progress }),
-	succeed: ({ savedPath, audioMastering }) =>
-		set({
-			phase: "done",
-			savedPath,
-			audioMastering,
-			cancel: null,
-			error: null,
-			errorDetails: null,
-		}),
-	fail: (error, details) =>
-		set({ phase: "error", error, errorDetails: details, cancel: null, progress: null }),
-	reset: () => {
-		if (isExportRunActive(get().phase)) return;
-		set({ ...IDLE });
-	},
-	abandon: () => set({ ...IDLE }),
-	requestCancel: () => {
-		get().cancel?.();
-	},
-}));
+export const useExportRunStore = create<ExportRunState>((set, get) => {
+	const actions: Actions = {
+		begin: (cancel) => transition({ type: "begin", cancel }),
+		setPhase: (phase) => {
+			transition({ type: "phase", phase });
+		},
+		setProgress: (progress) => {
+			transition({ type: "progress", progress });
+		},
+		succeed: (result) => {
+			transition({ type: "succeed", result });
+		},
+		fail: (error, details) => {
+			transition({ type: "fail", error, details });
+		},
+		reset: () => {
+			transition({ type: "reset" });
+		},
+		abandon: () => {
+			transition({ type: "abandon" });
+		},
+		requestCancel: () => {
+			transition({ type: "cancel" });
+		},
+	};
+	function transition(event: Event): boolean {
+		const state = get();
+		let next: Data;
+		const reject = () => {
+			console.warn("[export-run] Illegal transition", {
+				phase: state.phase,
+				event: event.type,
+				...(event.type === "phase" ? { requested: event.phase } : {}),
+			});
+			return false;
+		};
+		switch (event.type) {
+			case "begin":
+				if (active(state)) return reject();
+				next = { ...IDLE, phase: "configuring", cancel: event.cancel };
+				break;
+			case "phase":
+				if (
+					!active(state) ||
+					!(
+						event.phase === "configuring" ||
+						event.phase === "rendering" ||
+						event.phase === "writing"
+					)
+				)
+					return reject();
+				if (
+					["configuring", "rendering", "writing"].indexOf(event.phase) <
+					["configuring", "rendering", "writing"].indexOf(state.phase)
+				)
+					return reject();
+				next = { ...state, phase: event.phase };
+				break;
+			case "progress":
+				if (!active(state)) return reject();
+				next = { ...state, progress: event.progress };
+				break;
+			case "succeed":
+				if (!active(state)) return reject();
+				next = { ...IDLE, phase: "done", progress: state.progress, ...event.result };
+				break;
+			case "fail":
+				next = { ...IDLE, phase: "error", error: event.error, errorDetails: event.details };
+				break;
+			case "reset":
+				if (active(state)) return reject();
+				next = IDLE;
+				break;
+			case "abandon":
+				next = IDLE;
+				break;
+			case "cancel":
+				if (!active(state)) return reject();
+				state.cancel();
+				return true;
+		}
+		set({ ...next, ...actions }, true);
+		return true;
+	}
+	return { ...IDLE, ...actions };
+});
 
-/** Percent complete for the top bar, or null before the encoder reports its first frame. */
 export function exportRunPercent(state: Pick<ExportRunState, "phase" | "progress">): number | null {
 	if (state.phase === "writing") return 100;
 	if (state.phase !== "rendering" || !state.progress) return null;

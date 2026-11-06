@@ -10,7 +10,7 @@ const progress = (percentage: number) => ({
 
 describe("exportRunStore", () => {
 	beforeEach(() => {
-		useExportRunStore.setState({ phase: "idle", cancel: null, progress: null, error: null });
+		useExportRunStore.getState().abandon();
 	});
 
 	it("keeps the running export when reset is requested and cancels through the stored handle", () => {
@@ -52,4 +52,28 @@ describe("exportRunStore", () => {
 		expect(failed.errorDetails?.code).toBe("ENOSPC");
 		expect(failed.cancel).toBeNull();
 	});
+});
+
+it("rejects and logs overlapping exports without replacing the first cancel handle", () => {
+	useExportRunStore.getState().abandon();
+	const first = vi.fn();
+	const second = vi.fn();
+	expect(useExportRunStore.getState().begin(first)).toBe(true);
+	const log = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+	try {
+		expect(useExportRunStore.getState().begin(second)).toBe(false);
+		expect(log).toHaveBeenCalledWith("[export-run] Illegal transition", {
+			phase: "configuring",
+			event: "begin",
+		});
+		useExportRunStore.getState().setPhase("writing");
+		useExportRunStore.getState().setPhase("rendering");
+		expect(useExportRunStore.getState().phase).toBe("writing");
+		useExportRunStore.getState().requestCancel();
+		expect(first).toHaveBeenCalledOnce();
+		expect(second).not.toHaveBeenCalled();
+	} finally {
+		log.mockRestore();
+		useExportRunStore.getState().abandon();
+	}
 });

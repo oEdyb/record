@@ -21,6 +21,7 @@ import {
 	type ExportTransactionWarning,
 } from "../../export/atomicExport";
 import { assertAudioSpoolSpace } from "../../export/audioSpoolSpace";
+import { ExportCancellationRegistry } from "../../export/exportCancellationRegistry";
 import { renderedExportCodec } from "../../export/exportCodec";
 import {
 	prepareRecordingFastExport,
@@ -548,13 +549,10 @@ function tryLoadAddon(candidates: string[]): CompositorViewAddon | null {
 }
 
 export class CompositorViewService {
-	private static readonly PENDING_CANCELLATION_TTL_MS = 60_000;
-	private static readonly MAX_PENDING_CANCELLATIONS = 256;
 	private readonly options: CompositorViewServiceOptions;
 	private readonly exportPublisher: AtomicExportPublisher;
 	private readonly rects = new Map<number, CompositorViewRect>();
-	private readonly activeExports = new Map<string, AbortController>();
-	private readonly pendingExportCancellations = new Map<string, number>();
+	private readonly exportCancellations = new ExportCancellationRegistry();
 	private addon: CompositorViewAddon | null = null;
 	private loadAttempted = false;
 	private syntheticIdCounter = 0;
@@ -585,40 +583,20 @@ export class CompositorViewService {
 	}
 
 	cancelExport(exportId: string): boolean {
-		this.prunePendingExportCancellations();
-		const controller = this.activeExports.get(exportId);
-		if (controller) {
-			controller.abort(new Error("Export cancelled."));
-			this.addon?.cancelExport?.(exportId);
-			return true;
-		}
-
-		// A separate cancel IPC can overtake an export while that export still
-		// awaits entitlement or preflight work. Keep a short-lived tombstone so
-		// the matching export cannot start after its Cancel was acknowledged.
-		this.pendingExportCancellations.set(exportId, Date.now());
-		while (this.pendingExportCancellations.size > CompositorViewService.MAX_PENDING_CANCELLATIONS) {
-			const oldest = this.pendingExportCancellations.keys().next().value;
-			if (oldest === undefined) break;
-			this.pendingExportCancellations.delete(oldest);
-		}
+		this.exportCancellations.transition({ type: "cancel", id: exportId, at: Date.now() });
+		if (this.exportCancellations.active(exportId)) this.addon?.cancelExport?.(exportId);
 		return true;
 	}
-
 	private registerActiveExport(exportId: string, controller: AbortController): void {
-		this.prunePendingExportCancellations();
-		this.activeExports.set(exportId, controller);
-		if (this.pendingExportCancellations.delete(exportId)) {
-			controller.abort(new Error("Export cancelled."));
-		}
-	}
-
-	private prunePendingExportCancellations(): void {
-		const cutoff = Date.now() - CompositorViewService.PENDING_CANCELLATION_TTL_MS;
-		for (const [exportId, createdAt] of this.pendingExportCancellations) {
-			if (createdAt >= cutoff) break;
-			this.pendingExportCancellations.delete(exportId);
-		}
+		if (
+			!this.exportCancellations.transition({
+				type: "register",
+				id: exportId,
+				controller,
+				at: Date.now(),
+			})
+		)
+			throw new Error("An export with this ID is already running.");
 	}
 
 	private ensureAddon(): CompositorViewAddon | null {
@@ -847,10 +825,10 @@ export class CompositorViewService {
 		}
 		const exportId = transaction?.exportId ?? randomUUID();
 		const controller = new AbortController();
+		this.registerActiveExport(exportId, controller);
 		const forwardAbort = () => controller.abort(transaction?.signal?.reason);
 		if (transaction?.signal?.aborted) forwardAbort();
 		else transaction?.signal?.addEventListener("abort", forwardAbort, { once: true });
-		this.registerActiveExport(exportId, controller);
 		try {
 			const resolvedSceneJson = sceneJson ? resolveSceneAssetPaths(sceneJson) : undefined;
 			await assertExportKeepsSources(target, collectExportSourcePaths(clips, resolvedSceneJson));
@@ -989,7 +967,7 @@ export class CompositorViewService {
 			});
 			return exportWarning ? { ...stats, exportWarning } : stats;
 		} finally {
-			this.activeExports.delete(exportId);
+			this.exportCancellations.transition({ type: "finish", id: exportId, controller });
 			transaction?.signal?.removeEventListener("abort", forwardAbort);
 		}
 	}
@@ -1019,10 +997,10 @@ export class CompositorViewService {
 		}
 		const exportId = transaction?.exportId ?? randomUUID();
 		const controller = new AbortController();
+		this.registerActiveExport(exportId, controller);
 		const forwardAbort = () => controller.abort(transaction?.signal?.reason);
 		if (transaction?.signal?.aborted) forwardAbort();
 		else transaction?.signal?.addEventListener("abort", forwardAbort, { once: true });
-		this.registerActiveExport(exportId, controller);
 		try {
 			const resolvedSceneJson = sceneJson ? resolveSceneAssetPaths(sceneJson) : undefined;
 			await assertExportKeepsSources(target, collectExportSourcePaths(clips, resolvedSceneJson));
@@ -1090,7 +1068,7 @@ export class CompositorViewService {
 			});
 			return exportWarning ? { ...stats, exportWarning } : stats;
 		} finally {
-			this.activeExports.delete(exportId);
+			this.exportCancellations.transition({ type: "finish", id: exportId, controller });
 			transaction?.signal?.removeEventListener("abort", forwardAbort);
 		}
 	}
@@ -1108,10 +1086,10 @@ export class CompositorViewService {
 		const bytes = Buffer.from(videoData);
 		const exportId = transaction?.exportId ?? randomUUID();
 		const controller = new AbortController();
+		this.registerActiveExport(exportId, controller);
 		const forwardAbort = () => controller.abort(transaction?.signal?.reason);
 		if (transaction?.signal?.aborted) forwardAbort();
 		else transaction?.signal?.addEventListener("abort", forwardAbort, { once: true });
-		this.registerActiveExport(exportId, controller);
 		try {
 			if (!transaction.sourceMetadata || transaction.sourceMetadata.clips.length === 0) {
 				throw new Error("Export source metadata is required before publication.");
@@ -1154,7 +1132,7 @@ export class CompositorViewService {
 			});
 			return exportWarning;
 		} finally {
-			this.activeExports.delete(exportId);
+			this.exportCancellations.transition({ type: "finish", id: exportId, controller });
 			transaction?.signal?.removeEventListener("abort", forwardAbort);
 		}
 	}

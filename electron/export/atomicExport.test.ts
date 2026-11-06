@@ -610,6 +610,41 @@ describe("AtomicExportPublisher", () => {
 		]);
 	});
 
+	it("keeps the committed export when a durability observer throws", async () => {
+		const finalPath = path.join(directory, "video.mp4");
+		const removeStagingFile = vi.fn(async () => undefined);
+		const exportPublisher = new AtomicExportPublisher({
+			journalPath,
+			safetyBytes: 0n,
+			getAvailableBytes: async () => 1024n ** 4n,
+			removeStagingFile,
+			syncDirectory: async () => {
+				throw Object.assign(new Error("directory sync failed"), { code: "EIO" });
+			},
+		});
+		const log = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+		await expect(
+			exportPublisher.publish({
+				finalPath,
+				expectedBytes: 10,
+				render: async (candidate) => {
+					await writeFile(candidate, "committed footage");
+					return 7;
+				},
+				verify: async () => undefined,
+				onWarning: () => {
+					throw new Error("observer failed");
+				},
+			}),
+		).resolves.toBe(7);
+		expect(await readFile(finalPath, "utf8")).toBe("committed footage");
+		expect(removeStagingFile).not.toHaveBeenCalled();
+		expect(log).toHaveBeenCalledWith(
+			"[export] post-publication notification failed:",
+			expect.objectContaining({ message: "observer failed" }),
+		);
+	});
+
 	it("ignores an unsupported directory-sync operation after commit", async () => {
 		const finalPath = path.join(directory, "video.mp4");
 		const onWarning = vi.fn();

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { resolveFinalSymlink } from "../filesystem/durableJson";
+import { PublicationLifecycle } from "./publicationLifecycle";
 
 const JOURNAL_VERSION = 2;
 const STAGING_MARKER = ".klippt-export-";
@@ -325,7 +326,11 @@ export class AtomicExportPublisher {
 	private readonly entries = new Map<string, JournalEntry>();
 	private readonly ownerToken = randomUUID();
 	private readonly ownedJournalPath: string;
-	private ready: Promise<void> | null = null;
+	private recoveryState:
+		| { kind: "uninitialized" }
+		| { kind: "recovering" | "ready" | "failed"; promise: Promise<void> } = {
+		kind: "uninitialized",
+	};
 	private journalTail = Promise.resolve();
 
 	constructor(private readonly options: AtomicExportPublisherOptions) {
@@ -333,10 +338,36 @@ export class AtomicExportPublisher {
 	}
 
 	initialize(): Promise<void> {
-		if (!this.ready) {
-			this.ready = this.recover();
+		if (this.recoveryState.kind !== "uninitialized") return this.recoveryState.promise;
+		const promise = this.recover();
+		this.transitionRecovery({ type: "begin", promise });
+		void promise.then(
+			() => this.transitionRecovery({ type: "ready", promise }),
+			() => this.transitionRecovery({ type: "failed", promise }),
+		);
+		return promise;
+	}
+	private transitionRecovery(event: {
+		type: "begin" | "ready" | "failed";
+		promise: Promise<void>;
+	}): boolean {
+		const state = this.recoveryState;
+		if (
+			event.type === "begin"
+				? state.kind !== "uninitialized"
+				: state.kind !== "recovering" || state.promise !== event.promise
+		) {
+			console.warn("[export-recovery] Illegal transition", {
+				state: state.kind,
+				event: event.type,
+			});
+			return false;
 		}
-		return this.ready;
+		this.recoveryState = {
+			kind: event.type === "begin" ? "recovering" : event.type,
+			promise: event.promise,
+		};
+		return true;
 	}
 
 	async publish<T>(request: AtomicExportRequest<T>): Promise<T> {
@@ -378,13 +409,15 @@ export class AtomicExportPublisher {
 		} else {
 			request.signal?.addEventListener("abort", abort, { once: true });
 		}
-		let capacityTimer: ReturnType<typeof setInterval> | undefined;
-		let capacityMonitoring = true;
-		let capacityCheckTask: Promise<void> | null = null;
-		let capacityFailure: ExportTransactionError | null = null;
+		const lifecycle = new PublicationLifecycle<T>();
+		const phase = (phase: ExportTransactionPhase) => {
+			if (!lifecycle.transition({ type: "phase", phase }))
+				throw new Error(`Illegal export phase: ${phase}`);
+			request.onPhase?.(phase);
+		};
 
 		try {
-			request.onPhase?.("preflight");
+			phase("preflight");
 			throwIfAborted(controller.signal, "preflight");
 			try {
 				await this.assertCapacity(directory, stagingPath, request.expectedBytes);
@@ -394,52 +427,56 @@ export class AtomicExportPublisher {
 			}
 
 			const checkCapacity = () => {
-				if (capacityCheckTask || capacityFailure || controller.signal.aborted) return;
-				capacityCheckTask = (async () => {
+				if (!lifecycle.canCheck || controller.signal.aborted) return;
+				const task = (async () => {
 					try {
 						await this.assertCapacity(directory, stagingPath, request.expectedBytes);
 					} catch (error) {
-						if (!capacityMonitoring) return;
+						if (!lifecycle.monitoring) return;
 						const cause = asError(error);
-						capacityFailure = new ExportTransactionError(
+						const failure = new ExportTransactionError(
 							cause.message,
 							"rendering",
 							"INSUFFICIENT_SPACE",
 							true,
 							cause,
 						);
-						controller.abort(capacityFailure);
+						if (lifecycle.transition({ type: "capacity-failed", error: failure }))
+							controller.abort(failure);
 					}
 				})().finally(() => {
-					capacityCheckTask = null;
+					lifecycle.transition({ type: "checked", task });
 				});
+				lifecycle.transition({ type: "check", task });
 			};
-			capacityTimer = setInterval(checkCapacity, this.options.capacityCheckIntervalMs ?? 2_000);
+			const capacityTimer = setInterval(
+				checkCapacity,
+				this.options.capacityCheckIntervalMs ?? 2_000,
+			);
 			capacityTimer.unref?.();
+			if (!lifecycle.transition({ type: "render", timer: capacityTimer })) {
+				clearInterval(capacityTimer);
+				throw new Error("Illegal render start");
+			}
 
-			request.onPhase?.("rendering");
+			phase("rendering");
 			let result: T;
 			try {
 				result = await request.render(stagingPath, controller.signal);
 			} catch (error) {
-				if (capacityFailure) throw capacityFailure;
+				if (lifecycle.capacityFailure) throw lifecycle.capacityFailure;
 				if (controller.signal.aborted) {
 					throw new ExportTransactionError("Export cancelled.", "rendering", "CANCELLED");
 				}
 				throw wrapPhaseError(error, "rendering", "RENDER_FAILED");
 			}
-			if (capacityFailure) throw capacityFailure;
+			if (lifecycle.capacityFailure) throw lifecycle.capacityFailure;
 			throwIfAborted(controller.signal, "rendering");
-			if (capacityTimer) {
-				clearInterval(capacityTimer);
-				capacityTimer = undefined;
-			}
-			const finalCapacityCheck = capacityCheckTask;
-			await finalCapacityCheck;
-			if (capacityFailure) throw capacityFailure;
-			capacityMonitoring = false;
+			lifecycle.transition({ type: "rendered" });
+			await lifecycle.capacityTask;
+			if (lifecycle.capacityFailure) throw lifecycle.capacityFailure;
 
-			request.onPhase?.("verification");
+			phase("verification");
 			try {
 				await request.verify(stagingPath, result, controller.signal);
 			} catch (error) {
@@ -450,7 +487,7 @@ export class AtomicExportPublisher {
 			}
 			throwIfAborted(controller.signal, "verification");
 
-			request.onPhase?.("syncing");
+			phase("syncing");
 			try {
 				if (this.options.syncFile) {
 					await this.options.syncFile(stagingPath);
@@ -467,13 +504,14 @@ export class AtomicExportPublisher {
 			}
 			throwIfAborted(controller.signal, "syncing");
 
-			request.onPhase?.("publishing");
+			phase("publishing");
 			try {
 				throwIfAborted(controller.signal, "publishing");
 				await renameWithRetry(stagingPath, finalPath, controller.signal, this.options.renameFile);
 			} catch (error) {
 				throw wrapPhaseError(error, "publishing", "PUBLISH_FAILED");
 			}
+			lifecycle.transition({ type: "committed", result });
 			// The rename is the commit point. A valid final file is already visible,
 			// so a directory-fsync failure cannot safely roll back or report the export
 			// as absent. Ignore only filesystems that do not support directory sync.
@@ -498,9 +536,15 @@ export class AtomicExportPublisher {
 			await this.removeEntry(stagingPath).catch((error) => {
 				console.warn("[export] failed to clear committed export recovery entry:", error);
 			});
+			lifecycle.transition({ type: "done" });
 			return result;
 		} catch (error) {
-			request.onPhase?.("cleanup");
+			const committed = lifecycle.committed;
+			if (committed) {
+				console.warn("[export] post-publication notification failed:", error);
+				return committed.result;
+			}
+			phase("cleanup");
 			try {
 				if (this.options.removeStagingFile) {
 					await this.options.removeStagingFile(stagingPath);
@@ -509,6 +553,7 @@ export class AtomicExportPublisher {
 				}
 			} catch (cleanupError) {
 				const code = (cleanupError as NodeJS.ErrnoException | undefined)?.code;
+				lifecycle.transition({ type: "cleanup-blocked" });
 				const blocked = code === "EACCES" || code === "EPERM" || code === "EROFS";
 				throw new ExportTransactionError(
 					blocked
@@ -523,9 +568,9 @@ export class AtomicExportPublisher {
 			await this.removeEntry(stagingPath).catch((cleanupError) => {
 				console.warn("[export] failed to clear export recovery journal:", cleanupError);
 			});
+			lifecycle.transition({ type: "failed" });
 			throw error;
 		} finally {
-			if (capacityTimer) clearInterval(capacityTimer);
 			request.signal?.removeEventListener("abort", abort);
 		}
 	}

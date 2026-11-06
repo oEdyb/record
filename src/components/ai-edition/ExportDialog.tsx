@@ -347,7 +347,7 @@ export function ExportDialog({
 		const suggested = suggestedFileName(document.project.title, format);
 
 		const exportController = new AbortController();
-		run().begin(() => exportController.abort());
+		if (!run().begin(() => exportController.abort())) return;
 
 		let pickedPath: string | undefined;
 		try {
