@@ -88,7 +88,7 @@ export function StudioWindow() {
 		return () => window.removeEventListener("resize", resize);
 	}, []);
 	useEffect(() => {
-		if (snapshot) commands.transition({ type: "snapshot" });
+		if (snapshot) commands.transition({ type: "snapshot", snapshot });
 	}, [commands, snapshot]);
 	useEffect(() => {
 		if (commandState.kind !== "pending") return;
@@ -98,19 +98,6 @@ export function StudioWindow() {
 		);
 		return () => clearTimeout(timer);
 	}, [commands, commandState]);
-	useEffect(
-		() =>
-			window.electronAPI.onStudioRecordResult?.((result) => {
-				if (!result.success) {
-					const current = commands.getSnapshot();
-					if (current.kind === "pending" && current.command === "record") {
-						commands.transition({ type: "settle", token: current.token });
-					}
-					toast.error(result.error);
-				}
-			}),
-		[commands],
-	);
 	const send = useCallback(
 		(command: StudioCommand) => {
 			const token = Symbol("studio-command");

@@ -1,4 +1,4 @@
-import type { StudioCommand } from "../../../electron/studio/types";
+import type { StudioCommand, StudioSnapshot } from "../../../electron/studio/types";
 
 export type StudioCommandState =
 	| { kind: "idle" }
@@ -7,7 +7,7 @@ export type StudioCommandState =
 type Event =
 	| { type: "send"; command: StudioCommand; token: symbol }
 	| { type: "settle"; token: symbol }
-	| { type: "snapshot" };
+	| { type: "snapshot"; snapshot: Pick<StudioSnapshot, "phase" | "holdPlayback"> };
 
 export class StudioCommandStateStore {
 	private state: StudioCommandState = { kind: "idle" };
@@ -29,6 +29,12 @@ export class StudioCommandStateStore {
 			this.state = { kind: "idle" };
 		} else {
 			if (current.kind === "idle") return true;
+			if (
+				(current.command === "resume" || current.command === "record") &&
+				!event.snapshot.holdPlayback &&
+				event.snapshot.phase !== "recording"
+			)
+				return this.reject(event);
 			this.state = { kind: "idle" };
 		}
 		for (const listener of this.listeners) listener();
@@ -39,6 +45,8 @@ export class StudioCommandStateStore {
 		console.warn("[studio-command] Illegal transition", {
 			state: this.state.kind,
 			event: event.type,
+			pendingCommand: this.state.kind === "pending" ? this.state.command : null,
+			requestedCommand: event.type === "send" ? event.command : null,
 		});
 		return false;
 	}

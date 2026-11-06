@@ -23,6 +23,8 @@ Paths in this section are relative to src/components/studio unless otherwise sta
 - StudioTranscript.tsx — native sentence buttons, aria-current, following, removal focus recovery and Now.
 - StudioRail.tsx — duration-weighted clip navigation and sparse labels for long takes.
 - StudioTransport.tsx — shared pill controls, authoritative Remove/Undo state and Finish handoff.
+- studioCommandState.ts — one pending command authority, logged rejection, correlated completion and timeout release.
+- studioCommandState.test.ts — duplicate/stale rejection and unrelated-snapshot regressions.
 - studioLayout.ts — pure dock bounds, pane rules, shortcut guards and sentence navigation.
 - studioReaderAnchor.ts — preserves a visible sentence across explicit layout changes.
 - useStudioKeyboard.ts — document-scoped shortcuts with editing, modifier, composition and modal guards.

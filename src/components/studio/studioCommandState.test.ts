@@ -13,7 +13,24 @@ describe("Studio command lifecycle", () => {
 			expect(log).toHaveBeenCalledWith("[studio-command] Illegal transition", {
 				state: "pending",
 				event: "send",
+				pendingCommand: "resume",
+				requestedCommand: "stop",
 			});
+		} finally {
+			log.mockRestore();
+		}
+	});
+	it("does not acknowledge Resume from an unrelated paused snapshot", () => {
+		const log = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+		try {
+			const store = new StudioCommandStateStore();
+			const token = Symbol();
+			store.transition({ type: "send", command: "resume", token });
+			expect(
+				store.transition({ type: "snapshot", snapshot: { phase: "paused", holdPlayback: false } }),
+			).toBe(false);
+			expect(store.getSnapshot()).toEqual({ kind: "pending", command: "resume", token });
+			expect(log).toHaveBeenCalledOnce();
 		} finally {
 			log.mockRestore();
 		}
@@ -24,7 +41,7 @@ describe("Studio command lifecycle", () => {
 			const store = new StudioCommandStateStore();
 			const old = Symbol();
 			store.transition({ type: "send", command: "resume", token: old });
-			store.transition({ type: "snapshot" });
+			store.transition({ type: "snapshot", snapshot: { phase: "recording", holdPlayback: true } });
 			const token = Symbol();
 			store.transition({ type: "send", command: "pause", token });
 			expect(store.transition({ type: "settle", token: old })).toBe(false);

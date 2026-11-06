@@ -171,6 +171,12 @@ describe("Studio phase controls", () => {
 		mount(snapshot("paused"));
 		fireEvent.click(await screen.findByRole("button", { name: "tooltips.resumeRecording" }));
 		expect(command).toHaveBeenCalledWith("resume");
+		act(() =>
+			listener({
+				...snapshot("paused"),
+				transcript: { ...snapshot("paused").transcript, updatedAt: 1 },
+			}),
+		);
 		expect(screen.getByRole("button", { name: "peek.play" })).toBeDisabled();
 	});
 	it("releases replay and controls together after an unanswered resume times out", async () => {
