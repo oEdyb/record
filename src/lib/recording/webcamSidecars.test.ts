@@ -58,4 +58,79 @@ describe("native macOS webcam clip ledger", () => {
 		expect(removed.discard).toHaveBeenCalledOnce();
 		expect(unfinished.discard).toHaveBeenCalledOnce();
 	});
+	it("rejects clearing an unclaimed camera and protects an attached camera passed again as an extra", async () => {
+		const log = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+		const recorder = streamedRecorder();
+		const ledger = new NativeMacWebcamClipLedger();
+		ledger.queue({
+			clip: { index: 0, screenVideoPath: "/private/clip.mp4", durationMs: 1000 },
+			recorder,
+			webcamOffsetMs: 0,
+		});
+		expect(ledger.clear()).toBe(false);
+		const collected = await ledger.collectKept(new Set([0]));
+		ledger.markSaved(collected.webcams);
+		await ledger.discardUnclaimed([recorder]);
+		expect(recorder.discard).not.toHaveBeenCalled();
+		expect(recorder.release).not.toHaveBeenCalled();
+		expect(log).toHaveBeenCalledWith("[camera-ledger] Illegal transition", { event: "clear" });
+		expect(log).toHaveBeenCalledWith("[camera-ledger] Illegal transition", { event: "cleanup" });
+		expect(ledger.clear()).toBe(true);
+		log.mockRestore();
+	});
+	it("shares cleanup ownership and waits for finalization before allowing Clear", async () => {
+		const log = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+		let finish: () => void = () => undefined;
+		const closing = new Promise<void>((resolve) => {
+			finish = () => resolve();
+		});
+		const recorder = streamedRecorder();
+		vi.mocked(recorder.release).mockReturnValueOnce(closing);
+		const ledger = new NativeMacWebcamClipLedger();
+		ledger.queue({
+			clip: { index: 0, screenVideoPath: "/private/clip.mp4", durationMs: 1000 },
+			recorder,
+			webcamOffsetMs: 0,
+		});
+		const first = ledger.releaseUnclaimed();
+		const second = ledger.releaseUnclaimed();
+		await vi.waitFor(() => expect(recorder.release).toHaveBeenCalledOnce());
+		expect(ledger.clear()).toBe(false);
+		finish();
+		await Promise.all([first, second]);
+		expect(recorder.release).toHaveBeenCalledOnce();
+		expect(recorder.discard).not.toHaveBeenCalled();
+		expect(ledger.clear()).toBe(true);
+		expect(log).toHaveBeenCalledTimes(1);
+		log.mockRestore();
+	});
+});
+
+it("retains a failed old close across the next take and never discards that earlier take", async () => {
+	const ledger = new NativeMacWebcamClipLedger();
+	const old = streamedRecorder("old-camera.mp4");
+	const fresh = streamedRecorder("new-camera.mp4");
+	ledger.queue({
+		clip: { index: 0, screenVideoPath: "/private/old.mp4", durationMs: 500 },
+		recorder: old,
+		webcamOffsetMs: 0,
+	});
+	await ledger.collectKept(new Set([0]));
+	vi.mocked(old.release).mockRejectedValueOnce(new Error("close failed"));
+	await expect(ledger.releaseUnclaimed()).rejects.toThrow("close failed");
+	expect(ledger.clear()).toBe(false);
+	expect(ledger.beginTake()).toBe(true);
+	ledger.queue({
+		clip: { index: 0, screenVideoPath: "/private/new.mp4", durationMs: 500 },
+		recorder: fresh,
+		webcamOffsetMs: 0,
+	});
+	expect(
+		(await ledger.collectKept(new Set([0]))).webcams.map((value) => value.webcam.fileName),
+	).toEqual(["new-camera.mp4"]);
+	await ledger.discardUnclaimed();
+	expect(old.discard).not.toHaveBeenCalled();
+	expect(old.release).toHaveBeenCalledTimes(2);
+	expect(fresh.discard).toHaveBeenCalledOnce();
+	expect(ledger.clear()).toBe(true);
 });

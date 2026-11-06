@@ -3033,6 +3033,7 @@ export function registerIpcHandlers(
 	});
 	linuxRecordingHud = recordingHud;
 	nativeMacRecordingService = new NativeMacRecordingService({
+		onClipEditStateChange: () => options.onTakeEvent?.({ kind: "changed" }),
 		recordingsDir: RECORDINGS_DIR,
 		now: Date.now,
 		...(process.platform === "linux"

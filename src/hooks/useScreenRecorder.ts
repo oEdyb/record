@@ -1539,6 +1539,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			if (!isCountdownRunActive(countdownRunToken)) {
 				return true;
 			}
+			if (!nativeMacWebcamClips.current.beginTake())
+				throw new Error("The previous camera recorder is still closing. Try Record again.");
 			markStart("start-requested");
 			const request = {
 				...currentNativeMacRequest(selectedSource, activeRecordingId),
@@ -1595,7 +1597,6 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				currentClipIndex: 0,
 				webcamOffsetMs: 0,
 			};
-			nativeMacWebcamClips.current.clear();
 			setRecordedClips([]);
 
 			activeClipStartedAt.current = result.startedAtMs ?? Date.now();

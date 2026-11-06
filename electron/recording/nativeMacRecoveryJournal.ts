@@ -8,6 +8,7 @@ import {
 } from "../../src/lib/recordingSession";
 import { inspectHandoffSourceMedia } from "../export/sourceHandoffMedia";
 import { writeJsonDurably } from "../filesystem/durableJson";
+import { JournalFileLifecycle } from "./journalFileLifecycle";
 import { reindexRecordingOnDisk } from "./webm-seek-index";
 
 export type NativeMacRecoveredSession = RecordingSession & { recoveryWarnings?: string[] };
@@ -20,6 +21,23 @@ const ORIGINAL_FIELDS = [
 
 const JOURNAL_SCHEMA_VERSION = 1;
 const JOURNAL_SUFFIX = ".recovery.json";
+const journalFiles = new Map<string, JournalFileLifecycle>();
+function mutateJournal(
+	filePath: string,
+	kind: "persist" | "update" | "clear",
+	mutation: () => Promise<void>,
+) {
+	const key = path.resolve(filePath);
+	const owner = journalFiles.get(key) ?? new JournalFileLifecycle();
+	journalFiles.set(key, owner);
+	const operation = owner.run(kind, mutation);
+	const release = () => {
+		if (journalFiles.get(key) === owner && owner.settled && owner.pending === operation)
+			journalFiles.delete(key);
+	};
+	void operation.then(release, release);
+	return operation;
+}
 
 type NativeMacRecoveryEnvelope = {
 	schemaVersion: typeof JOURNAL_SCHEMA_VERSION;
@@ -31,6 +49,17 @@ export function nativeMacRecoveryJournalPath(recordingsDir: string, recordingId:
 }
 
 export async function persistNativeMacRecoveryJournal(
+	recordingsDir: string,
+	session: RecordingSession,
+): Promise<void> {
+	const snapshot = structuredClone(session);
+	return mutateJournal(
+		nativeMacRecoveryJournalPath(recordingsDir, session.createdAt),
+		"persist",
+		() => writeRecoverySession(recordingsDir, snapshot),
+	);
+}
+async function writeRecoverySession(
 	recordingsDir: string,
 	session: RecordingSession,
 ): Promise<void> {
@@ -50,33 +79,42 @@ export async function updateNativeMacRecoveryJournalIfPresent(
 	recordingsDir: string,
 	session: RecordingSession,
 ): Promise<void> {
+	const snapshot = structuredClone(session);
 	const journalPath = nativeMacRecoveryJournalPath(recordingsDir, session.createdAt);
-	const exists = await fs
-		.stat(journalPath)
-		.then((stats) => stats.isFile())
-		.catch(() => false);
-	if (exists) await persistNativeMacRecoveryJournal(recordingsDir, session);
+	return mutateJournal(journalPath, "update", async () => {
+		const exists = await fs
+			.stat(journalPath)
+			.then((stats) => stats.isFile())
+			.catch(() => false);
+		if (exists) await writeRecoverySession(recordingsDir, snapshot);
+	});
 }
 
 export async function clearNativeMacRecoveryJournal(
 	recordingsDir: string,
 	recordingId: number,
 ): Promise<void> {
-	try {
-		await fs.unlink(nativeMacRecoveryJournalPath(recordingsDir, recordingId));
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-	}
-	if (process.platform === "win32") return;
-	let directoryHandle: Awaited<ReturnType<typeof fs.open>> | undefined;
-	try {
-		directoryHandle = await fs.open(recordingsDir, "r");
-		await directoryHandle.sync();
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-	} finally {
-		await directoryHandle?.close().catch(() => undefined);
-	}
+	return mutateJournal(
+		nativeMacRecoveryJournalPath(recordingsDir, recordingId),
+		"clear",
+		async () => {
+			try {
+				await fs.unlink(nativeMacRecoveryJournalPath(recordingsDir, recordingId));
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+			}
+			if (process.platform === "win32") return;
+			let directoryHandle: Awaited<ReturnType<typeof fs.open>> | undefined;
+			try {
+				directoryHandle = await fs.open(recordingsDir, "r");
+				await directoryHandle.sync();
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+			} finally {
+				await directoryHandle?.close().catch(() => undefined);
+			}
+		},
+	);
 }
 
 async function readableSize(filePath: string): Promise<number | null> {
@@ -249,6 +287,10 @@ async function recoverSession(
 	return {
 		...legacySession,
 	};
+}
+
+export function readNativeMacRecoveryMetadata(recordingsDir: string, recordingId: number) {
+	return readRecoverySession(nativeMacRecoveryJournalPath(recordingsDir, recordingId));
 }
 
 async function readRecoverySession(filePath: string): Promise<RecordingSession | null> {

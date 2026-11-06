@@ -229,6 +229,19 @@ describe("Studio phase controls", () => {
 		await screen.findByRole("button", { name: "studio.finish" });
 		expect(screen.queryByRole("button", { name: "recording.removePreviousClip" })).toBeNull();
 	});
+	it("pauses only clip edits during journal recovery", async () => {
+		const value = snapshot("paused");
+		value.clipEdits = "needs-recovery";
+		value.pill.undoClipIndex = 4;
+		mount(value);
+		expect(await screen.findByText("Clip edits are paused.")).toHaveAttribute("role", "status");
+		expect(screen.getByRole("button", { name: "recording.removePreviousClip" })).toBeDisabled();
+		expect(screen.getByRole("button", { name: "studio.undo" })).toBeDisabled();
+		expect(screen.getByRole("button", { name: "tooltips.resumeRecording" })).toBeEnabled();
+		expect(screen.getByRole("button", { name: "tooltips.stopRecording" })).toBeEnabled();
+		fireEvent.click(screen.getByRole("button", { name: "tooltips.stopRecording" }));
+		expect(command).toHaveBeenCalledWith("stop");
+	});
 	it("uses the pill remove predicate and Undo index", async () => {
 		const value = snapshot("paused");
 		value.pill.canRemovePreviousClip = false;

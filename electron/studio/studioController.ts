@@ -28,6 +28,7 @@ export interface StudioWindowLike {
 }
 
 export interface StudioTake {
+	clipEdits?: "ready" | "needs-recovery";
 	recordingId: number | null;
 	clips: RecordingSessionClip[];
 	running: boolean;
@@ -155,6 +156,7 @@ export class StudioController {
 			clips,
 			committedMs: clips.reduce((sum, clip) => sum + Math.max(0, clip.durationMs), 0),
 			liveSinceMs: capturing ? this.liveSinceMs : null,
+			clipEdits: take?.clipEdits ?? "ready",
 			hiddenForCapture: capturing && !this.outside,
 			holdPlayback: capturing || this.resuming,
 			shown: this.visible(),

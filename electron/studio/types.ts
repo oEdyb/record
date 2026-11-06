@@ -49,6 +49,7 @@ export const IDLE_PILL_STATE: StudioPillState = {
 };
 
 export interface StudioSnapshot {
+	clipEdits?: "ready" | "needs-recovery";
 	phase: StudioPhase;
 	recordingId: number | null;
 	/** Committed kept clips in take order, with their screen, camera and microphone files. */

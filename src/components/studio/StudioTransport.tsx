@@ -23,9 +23,11 @@ export function StudioTransport({
 	const t = useScopedT("launch");
 	const editorT = useScopedT("editor");
 	const { phase, pill } = snapshot;
+	const clipEditsPaused = snapshot.clipEdits === "needs-recovery";
 	const busy = pending || pill.transportBusy;
 	return (
 		<footer className={styles.capture}>
+			{clipEditsPaused ? <p role="status">Clip edits are paused.</p> : null}
 			<div className={styles.transport} role="toolbar" aria-label={t("studio.title")}>
 				{phase === "idle" ? (
 					<HudCompactRecordButton
@@ -60,7 +62,10 @@ export function StudioTransport({
 				(phase === "review" && pill.canRemovePreviousClip) ? (
 					<HudRemovePreviousClipButton
 						disabled={
-							busy || !pill.canRemovePreviousClip || (phase !== "paused" && phase !== "review")
+							clipEditsPaused ||
+							busy ||
+							!pill.canRemovePreviousClip ||
+							(phase !== "paused" && phase !== "review")
 						}
 						label={t("recording.removePreviousClip")}
 						onClick={() => send("remove-last")}
@@ -70,7 +75,11 @@ export function StudioTransport({
 			{pill.undoClipIndex !== null ? (
 				<div className={styles.undo}>
 					{t("studio.removed")} ·{" "}
-					<button type="button" disabled={busy} onClick={() => send("undo-remove")}>
+					<button
+						type="button"
+						disabled={busy || clipEditsPaused}
+						onClick={() => send("undo-remove")}
+					>
 						{t("studio.undo")}
 					</button>
 				</div>

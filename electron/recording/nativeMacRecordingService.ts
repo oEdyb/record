@@ -20,6 +20,7 @@ import type {
 } from "../../src/lib/recordingSession";
 import { normalizeRecordingOriginals } from "../../src/lib/recordingSession";
 import { writeJsonDurably } from "../filesystem/durableJson";
+import { ClipJournalLifecycle } from "./clipJournalLifecycle";
 import {
 	NativeMacHelperClient,
 	NativeMacPauseError,
@@ -29,6 +30,7 @@ import {
 	clearNativeMacRecoveryJournal,
 	nativeMacJournalCoveredBy,
 	persistNativeMacRecoveryJournal,
+	readNativeMacRecoveryMetadata,
 	restoreNativeMacRecoverySession,
 } from "./nativeMacRecoveryJournal";
 import { NativeRecordingLifecycle } from "./nativeRecordingLifecycle";
@@ -39,6 +41,7 @@ import {
 	type RecordingStorageStatus,
 	storageStartError,
 } from "./recordingStorage";
+import { RecoveryJournalLifecycle } from "./recoveryJournalLifecycle";
 
 const RECORDING_FILE_PREFIX = "recording-";
 const RECORDING_SESSION_SUFFIX = ".session.json";
@@ -76,6 +79,7 @@ export type NativeMacCaptureHelper = Pick<
 
 export type NativeMacRecordingServiceDependencies = {
 	/** Names each start step as it finishes, for the start timing log. */
+	onClipEditStateChange?: () => void;
 	onStartStage?: (stage: string) => void;
 	/** Names each Stop step as it finishes, for the stop timing log. */
 	onStopStage?: (stage: string) => void;
@@ -144,14 +148,23 @@ export class NativeMacRecordingService {
 	private clipCursorModes = new Map<number, CursorCaptureMode>();
 	private pauseStartedAtMs: number | null = null;
 	private pauseRanges: Array<{ startMs: number; endMs: number }> = [];
-	private clips: RecordingSessionClip[] = [];
+	private readonly clipJournal = new ClipJournalLifecycle();
+	private get clips() {
+		return this.clipJournal.clips;
+	}
+	private set clips(clips: RecordingSessionClip[]) {
+		this.clipJournal.transition({ type: "clips", clips });
+	}
 	private activeClipIndex: number | null = null;
 	private commandChain: Promise<void> = Promise.resolve();
 	private lastDiagnosticOutput = "";
 	private sessionGeneration = 0;
 	private originals = new Map<number, Partial<RecordingSessionClip>>();
 	private rendererWebcamPaths = new Set<string>();
-	private recoveryWrites: Promise<void> = Promise.resolve();
+	private readonly journal = new RecoveryJournalLifecycle();
+	private get recoveryWrites() {
+		return this.journal.pending;
+	}
 	private readonly storage: RecordingStorageMonitor;
 
 	private readonly lifecycle = new NativeRecordingLifecycle();
@@ -228,8 +241,10 @@ export class NativeMacRecordingService {
 		clips: RecordingSessionClip[];
 		running: boolean;
 		paused: boolean;
+		clipEdits: "ready" | "needs-recovery";
 	} {
 		return {
+			clipEdits: this.clipJournal.editsPaused ? "needs-recovery" : "ready",
 			recordingId: this.recordingId,
 			// The camera is recorded by the renderer, so its file joins the clip as Stop joins it.
 			clips: this.clips
@@ -446,8 +461,9 @@ export class NativeMacRecordingService {
 					failedRecordingId !== null &&
 					!(await restoreNativeMacRecoverySession(this.deps.recordingsDir, failedRecordingId))
 				) {
-					await this.serializeRecoveryMutation(() =>
-						clearNativeMacRecoveryJournal(this.deps.recordingsDir, failedRecordingId),
+					await this.serializeRecoveryMutation(
+						() => clearNativeMacRecoveryJournal(this.deps.recordingsDir, failedRecordingId),
+						"clear",
 					).catch(() => undefined);
 				}
 				this.reset();
@@ -515,8 +531,7 @@ export class NativeMacRecordingService {
 							this.clipCursorModes.get(finalizedClip.index) ?? this.cursorCaptureMode,
 					};
 					if (!this.clips.some((clip) => clip.index === finalizedClip?.index)) {
-						this.clips.push(finalizedClip);
-						this.clips.sort((a, b) => a.index - b.index);
+						this.clips = [...this.clips, finalizedClip].sort((a, b) => a.index - b.index);
 					}
 				}
 				this.activeClipIndex = null;
@@ -534,8 +549,7 @@ export class NativeMacRecordingService {
 						cursorCaptureMode: this.clipCursorModes.get(error.clip.index) ?? this.cursorCaptureMode,
 					};
 					if (!this.clips.some((clip) => clip.index === finalizedClip?.index)) {
-						this.clips.push(finalizedClip);
-						this.clips.sort((a, b) => a.index - b.index);
+						this.clips = [...this.clips, finalizedClip].sort((a, b) => a.index - b.index);
 					}
 					this.activeClipIndex = null;
 					await this.persistLiveSession().catch((persistError: unknown) => {
@@ -763,18 +777,10 @@ export class NativeMacRecordingService {
 	removePreviousClip() {
 		return this.enqueue(async () => {
 			this.requireHelper();
+			this.requireClipEdits();
 			const removal = removePreviousNativeMacClip(this.clips);
 			if (!removal.removed) return { success: true };
-			const previousClips = this.clips;
-			this.clips = removal.clips;
-			try {
-				// The recovery journal is the crash-time authority. Commit it before
-				// reporting success so a stale journal can never resurrect this clip.
-				await this.persistRecoverySession();
-			} catch (error) {
-				this.clips = previousClips;
-				throw error;
-			}
+			await this.commitClipEdit(removal.clips, "remove");
 			await this.persistManifestBestEffort();
 			return { success: true, clip: removal.removed };
 		});
@@ -783,6 +789,7 @@ export class NativeMacRecordingService {
 	restoreRemovedClip(clipIndex: number) {
 		return this.enqueue(async () => {
 			this.requireHelper();
+			this.requireClipEdits();
 			if (!Number.isSafeInteger(clipIndex) || clipIndex < 0) {
 				throw new Error("The clip to restore is invalid.");
 			}
@@ -790,14 +797,7 @@ export class NativeMacRecordingService {
 			if (!restoration.restored) {
 				throw new Error("The removed clip is no longer available to restore.");
 			}
-			const previousClips = this.clips;
-			this.clips = restoration.clips;
-			try {
-				await this.persistRecoverySession();
-			} catch (error) {
-				this.clips = previousClips;
-				throw error;
-			}
+			await this.commitClipEdit(restoration.clips, "restore");
 			await this.persistManifestBestEffort();
 			return { success: true, clip: restoration.restored };
 		});
@@ -805,6 +805,7 @@ export class NativeMacRecordingService {
 
 	stop(discard = false): Promise<NativeMacRecordingStopResult> {
 		if (this.stopOperation) return this.stopOperation;
+		this.clipJournal.transition({ type: "cancel-retry" });
 		// Abort queued choices as well as a picker already waiting for a human.
 		this.sourceSelectionCancellation?.abort();
 		if (this.captureConfig?.platform === "linux" && this.helper?.isRunning()) {
@@ -848,7 +849,10 @@ export class NativeMacRecordingService {
 					const recoveredSession = discard
 						? null
 						: await restoreNativeMacRecoverySession(this.deps.recordingsDir, recordingId);
-					const recoveredClips = recoveredSession?.clips ?? this.clips;
+					const diskClips = recoveredSession?.clips ?? this.clips;
+					const recoveredClips = this.clipJournal.editsPaused
+						? this.withAcknowledgedClipFlags(diskClips)
+						: diskClips;
 					if (!discard && !recoveredClips.some((clip) => !clip.removed)) throw error;
 					const recoveredActiveClip = recoveredClips.some(
 						(clip) => !clip.removed && clip.provisionalDuration,
@@ -911,8 +915,9 @@ export class NativeMacRecordingService {
 							!this.clips.some((known) => known.index === clip.index),
 					);
 					if (recoveredTail) {
-						this.clips.push(recoveredTail);
-						this.clips.sort((left, right) => left.index - right.index);
+						this.clips = [...this.clips, recoveredTail].sort(
+							(left, right) => left.index - right.index,
+						);
 						const recoveryMessage =
 							"The unfinished active clip was recovered from its fragmented MP4.";
 						stopped = {
@@ -937,8 +942,9 @@ export class NativeMacRecordingService {
 						...this.clips.map((clip) => clip.screenVideoPath),
 						...discoveredPaths,
 					]);
-					await this.serializeRecoveryMutation(() =>
-						clearNativeMacRecoveryJournal(this.deps.recordingsDir, recordingId),
+					await this.serializeRecoveryMutation(
+						() => clearNativeMacRecoveryJournal(this.deps.recordingsDir, recordingId),
+						"clear",
 					);
 					return {
 						success: true,
@@ -969,8 +975,9 @@ export class NativeMacRecordingService {
 				};
 				await writeJsonDurably(this.manifestPath(recordingId), session);
 				this.deps.onStopStage?.("session-written");
-				await this.serializeRecoveryMutation(() =>
-					persistNativeMacRecoveryJournal(this.deps.recordingsDir, session),
+				await this.serializeRecoveryMutation(
+					() => persistNativeMacRecoveryJournal(this.deps.recordingsDir, session),
+					"publish",
 				).catch((error) => {
 					console.warn("[capture-mac] could not update recovery journal after Stop:", error);
 				});
@@ -1046,6 +1053,10 @@ export class NativeMacRecordingService {
 		cursorCaptureMode: CursorCaptureMode,
 	): void {
 		this.sessionGeneration += 1;
+		this.journal.transition({
+			type: "bind",
+			owner: { generation: this.sessionGeneration, recordingId },
+		});
 		this.originals = new Map();
 		this.rendererWebcamPaths.clear();
 
@@ -1059,7 +1070,7 @@ export class NativeMacRecordingService {
 		this.pauseStartedAtMs = null;
 		this.pauseRanges = [];
 
-		this.clips = [];
+		this.clipJournal.transition({ type: "reset" });
 		this.activeClipIndex = 0;
 
 		this.lastDiagnosticOutput = "";
@@ -1069,6 +1080,7 @@ export class NativeMacRecordingService {
 		this.lastDiagnosticOutput = this.helper?.output ?? this.lastDiagnosticOutput;
 		this.lifecycle.transition({ type: "reset" });
 		this.storage.stop();
+		this.journal.transition({ type: "retire", generation: this.sessionGeneration });
 		this.sessionGeneration += 1;
 		this.originals = new Map();
 		this.rendererWebcamPaths.clear();
@@ -1084,7 +1096,7 @@ export class NativeMacRecordingService {
 		this.pauseStartedAtMs = null;
 		this.pauseRanges = [];
 
-		this.clips = [];
+		this.clipJournal.transition({ type: "reset" });
 		this.activeClipIndex = null;
 	}
 
@@ -1130,23 +1142,122 @@ export class NativeMacRecordingService {
 		};
 	}
 
-	private async persistRecoverySession(): Promise<void> {
-		const session = this.recoverySession();
-		if (!session) return;
-		await this.serializeRecoveryMutation(() =>
-			persistNativeMacRecoveryJournal(this.deps.recordingsDir, session),
-		);
+	private withAcknowledgedClipFlags(recovered: RecordingSessionClip[]) {
+		const known = new Map(this.clips.map((clip) => [clip.index, clip]));
+		const result = recovered.map((clip) => {
+			const acknowledged = known.get(clip.index);
+			if (!acknowledged) return clip;
+			known.delete(clip.index);
+			return acknowledged.screenVideoPath === clip.screenVideoPath
+				? { ...clip, removed: acknowledged.removed }
+				: acknowledged;
+		});
+		return [...result, ...known.values()].sort((a, b) => a.index - b.index);
 	}
 
-	private async serializeRecoveryMutation(mutation: () => Promise<void>): Promise<void> {
+	private requireClipEdits() {
+		if (this.clipJournal.state.kind !== "ready")
+			throw new Error(
+				"Clip edits are paused while the saved clip state is checked. Recording can continue.",
+			);
+	}
+
+	private async commitClipEdit(clips: RecordingSessionClip[], kind: "remove" | "restore") {
+		const token = Symbol(kind);
+		if (!this.clipJournal.transition({ type: "begin", change: { token, clips } })) {
+			this.requireClipEdits();
+			throw new Error("Clip edit was rejected.");
+		}
+		await this.serializeRecoveryMutation(async () => {
+			try {
+				const session = this.recoverySession();
+				if (!session) throw new Error("The recording journal is unavailable.");
+				const flags = new Map(clips.map((clip) => [clip.index, !!clip.removed]));
+				const candidate = {
+					...session,
+					clips: session.clips?.map((clip) =>
+						flags.has(clip.index) ? { ...clip, removed: flags.get(clip.index) } : clip,
+					),
+				};
+				await persistNativeMacRecoveryJournal(this.deps.recordingsDir, candidate);
+				this.clipJournal.transition({ type: "committed", token });
+			} catch (error) {
+				this.clipJournal.transition({ type: "failed", token });
+				this.deps.onClipEditStateChange?.();
+				this.scheduleClipReconciliation();
+				console.warn("[clip-journal] Clip edits are paused", error);
+				throw new Error(
+					`Clip edits are paused while the saved clip state is checked. Recording can continue. ${this.errorMessage(error)}`,
+				);
+			}
+		}, kind);
+	}
+
+	private scheduleClipReconciliation() {
+		if (this.stopOperation || !this.helper?.isRunning()) return;
+		this.clipJournal.transition({
+			type: "retry",
+			schedule: () => {
+				const timer = setTimeout(() => {
+					void this.reconcileClipJournal();
+				}, 500);
+				timer.unref();
+				return timer;
+			},
+		});
+	}
+
+	private async reconcileClipJournal() {
+		if (this.stopOperation || this.recordingId === null) return;
 		const generation = this.sessionGeneration;
-		const write = this.recoveryWrites
-			.catch(() => undefined)
-			.then(async () => {
-				if (generation === this.sessionGeneration) await mutation();
+		const recordingId = this.recordingId;
+		if (!this.clipJournal.transition({ type: "reconcile" })) return;
+		const state = this.clipJournal.state;
+		if (state.kind !== "reconciling") return;
+		try {
+			await this.serializeRecoveryMutation(async () => {
+				const disk = await readNativeMacRecoveryMetadata(this.deps.recordingsDir, recordingId);
+				if (generation !== this.sessionGeneration) return;
+				if (!disk || disk.createdAt !== recordingId)
+					throw new Error("Saved clip metadata is unreadable.");
+				const session = this.recoverySession();
+				if (!session) throw new Error("Recording is no longer available.");
+				const desiredClips = new Map(state.change.clips.map((clip) => [clip.index, clip]));
+				const diskClips = new Map((disk.clips ?? []).map((clip) => [clip.index, clip]));
+				for (const clip of this.clips) {
+					const desired = desiredClips.get(clip.index);
+					if (!desired || !!desired.removed === !!clip.removed) continue;
+					const saved = diskClips.get(clip.index);
+					if (!saved || saved.screenVideoPath !== clip.screenVideoPath)
+						throw new Error("Saved clip ownership could not be reconciled.");
+				}
+				await persistNativeMacRecoveryJournal(this.deps.recordingsDir, session);
+				if (generation === this.sessionGeneration) {
+					this.clipJournal.transition({ type: "reconciled", token: state.change.token });
+					this.deps.onClipEditStateChange?.();
+				}
 			});
-		this.recoveryWrites = write;
-		await write;
+		} catch (error) {
+			if (generation !== this.sessionGeneration) return;
+			console.warn("[clip-journal] Reconciliation will retry", error);
+			this.clipJournal.transition({ type: "failed", token: state.change.token });
+			this.scheduleClipReconciliation();
+		}
+	}
+
+	private async persistRecoverySession(): Promise<void> {
+		await this.serializeRecoveryMutation(async () => {
+			if (this.clipJournal.editsPaused) return;
+			const session = this.recoverySession();
+			if (session) await persistNativeMacRecoveryJournal(this.deps.recordingsDir, session);
+		});
+	}
+
+	private serializeRecoveryMutation(
+		mutation: () => Promise<void>,
+		kind: "snapshot" | "remove" | "restore" | "publish" | "clear" = "snapshot",
+	): Promise<void> {
+		return this.journal.write(this.sessionGeneration, kind, mutation);
 	}
 
 	async registerRendererWebcam(

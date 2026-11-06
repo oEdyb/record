@@ -562,4 +562,52 @@ describe("native macOS recovery journal", () => {
 
 		expect((await restoreLatestNativeMacRecoverySession(recordingsDir))?.createdAt).toBe(45);
 	});
+	it("serializes a later clear after an update's existence check so the journal cannot resurrect", async () => {
+		const session: RecordingSession = {
+			createdAt: 88,
+			screenVideoPath: path.join(recordingsDir, "screen.mp4"),
+		};
+		await persistNativeMacRecoveryJournal(recordingsDir, session);
+		const journalPath = nativeMacRecoveryJournalPath(recordingsDir, session.createdAt);
+		const originalStat = fs.stat;
+		const unlink = vi.spyOn(fs, "unlink");
+		let entered: () => void = () => undefined;
+		const checking = new Promise<void>((resolve) => {
+			entered = () => resolve();
+		});
+		let release: () => void = () => undefined;
+		const hold = new Promise<void>((resolve) => {
+			release = () => resolve();
+		});
+		const stat = vi
+			.spyOn(fs, "stat")
+			.mockImplementation(async (...args: Parameters<typeof fs.stat>) => {
+				const result = await originalStat(...args);
+				if (args[0] === journalPath) {
+					entered();
+					await hold;
+				}
+				return result;
+			});
+		try {
+			const updating = updateNativeMacRecoveryJournalIfPresent(recordingsDir, {
+				...session,
+				interruption: { code: "test", message: "updated" },
+			});
+			await checking;
+			const clearing = clearNativeMacRecoveryJournal(recordingsDir, session.createdAt);
+			const clearsBeforeUpdateSettled = unlink.mock.calls.length;
+			release();
+			await updating;
+			await clearing;
+			expect(clearsBeforeUpdateSettled).toBe(0);
+			await expect(fs.readFile(journalPath)).rejects.toMatchObject({ code: "ENOENT" });
+			await updateNativeMacRecoveryJournalIfPresent(recordingsDir, session);
+			await expect(fs.readFile(journalPath)).rejects.toMatchObject({ code: "ENOENT" });
+		} finally {
+			release();
+			stat.mockRestore();
+			unlink.mockRestore();
+		}
+	});
 });

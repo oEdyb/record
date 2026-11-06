@@ -1652,6 +1652,9 @@ describe("NativeMacRecordingService", () => {
 		const open = vi.spyOn(fs, "open").mockRejectedValueOnce(new Error("ENOSPC: disk full"));
 		await expect(service.restoreRemovedClip(clip.index)).rejects.toThrow("ENOSPC");
 		open.mockRestore();
+		expect(service.studioTake().clipEdits).toBe("needs-recovery");
+		await expect(service.restoreRemovedClip(clip.index)).rejects.toThrow("Clip edits are paused");
+		await vi.waitFor(() => expect(service.studioTake().clipEdits).toBe("ready"), { timeout: 2500 });
 
 		await expect(service.restoreRemovedClip(clip.index)).resolves.toMatchObject({
 			success: true,
