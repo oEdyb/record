@@ -46,3 +46,9 @@ The existing `NativeMacHelperClient` command/acknowledgement implementation and 
 The transition function rejects/logs illegal Continue without releasing the writer. Stop always extracts/drains an owned writer before its terminal transition. Existing screen/source readiness checks, frozen pause boundary, original-source notifications, canonical clip commits, compatibility pause/resume and failed-tail recovery remain in their original order. The first-frame timeout belongs only to waiting, so a static acknowledged source cannot inherit it.
 
 The native regression deliberately issues illegal Continue on a real software writer, then Stops and fully decodes its retained screen file. Existing clip tests also cover source PCM readiness, paused audio exclusion, short clips, static Continue, source replacement, late originals and failed clip retention. Capped private tmpfs tests explicitly exercise ENOSPC during capture and at Stop; neither test writes to a real recordings volume.
+
+## Renderer camera handoff
+
+`RendererRecordingStop` owns one unbound/bound/waiting/acknowledged/failed state. Matching renderer, take ID and token are required for completion. Stale acknowledgement rejects/logs without replacing the current owner. Rebinding fails the old waiter and removes its listeners before the next handoff proceeds. Crash, close, send failure and the shared quit deadline settle the current operation once.
+
+Repeated `wait` calls join the same promise and first deadline, including a duplicate caller whose own signal is already aborted. They cannot overwrite the camera save waiter. Regression tests cover that join and a superseded owner's stale acknowledgement/abort while the next handoff remains live. Existing quit, renderer-crash, source attachment and recorder tests retain the durable handoff behavior.

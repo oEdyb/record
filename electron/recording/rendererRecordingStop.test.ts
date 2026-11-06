@@ -115,3 +115,52 @@ describe("renderer recording Stop acknowledgement", () => {
 		await second;
 	});
 });
+
+it("joins overlapping Stop waiters without replacing the camera handoff", async () => {
+	const owner = renderer();
+	const handoff = new RendererRecordingStop();
+	const request = handoff.bind(owner, 7);
+	const signal = new AbortController().signal;
+	const first = handoff.wait(7, signal);
+	const second = handoff.wait(7, signal);
+	const expired = new AbortController();
+	expired.abort();
+	const third = handoff.wait(7, expired.signal);
+	void third.catch(() => undefined);
+	expect(third).toBe(first);
+	expect(second).toBe(first);
+	expect(owner.send).toHaveBeenCalledTimes(1);
+	expect(handoff.acknowledge(owner, { ...request, success: true })).toBe(true);
+	await Promise.all([first, second, third]);
+	expect(owner.listenerCount("destroyed")).toBe(0);
+});
+it("rejects and logs a stale acknowledgement without releasing the new owner", async () => {
+	const owner = renderer();
+	const next = renderer();
+	const handoff = new RendererRecordingStop();
+	const old = handoff.bind(owner, 7);
+	const deadline = new AbortController();
+	const pending = handoff.wait(7, deadline.signal);
+	const rejected = expect(pending).rejects.toThrow("replaced");
+	const request = handoff.bind(next, 8);
+	await rejected;
+	const log = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+	try {
+		expect(handoff.acknowledge(owner, { ...old, success: true })).toBe(false);
+		expect(log).toHaveBeenCalledWith("[renderer-recording-stop] Illegal transition", {
+			state: "bound",
+			event: "acknowledge",
+			recordingId: 8,
+		});
+		expect(handoff.owns(next, 8, request.token)).toBe(true);
+		const saved = handoff.wait(8, new AbortController().signal);
+		deadline.abort();
+		expect(handoff.pendingRecordingId()).toBe(8);
+		expect(handoff.acknowledge(next, { ...request, success: true })).toBe(true);
+		await saved;
+		expect(owner.listenerCount("destroyed")).toBe(0);
+		expect(next.listenerCount("destroyed")).toBe(0);
+	} finally {
+		log.mockRestore();
+	}
+});
