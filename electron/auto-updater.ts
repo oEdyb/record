@@ -16,7 +16,7 @@ export type UpdateOutcome =
 	| { kind: "unsupported" }
 	| { kind: "current" }
 	| { kind: "available"; version: string }
-	| { kind: "downloaded"; version: string }
+	| { kind: "downloaded" }
 	| { kind: "failed"; error: Error };
 
 /** Reasons an install must not start right now. Kept separate from "can this channel update at
@@ -63,7 +63,8 @@ export async function checkForSelfUpdate(channel: InstallChannel): Promise<Updat
 		const result = await autoUpdater.checkForUpdates();
 		// null when no feed resolved; equal versions come back with no downloadPromise.
 		const version = result?.updateInfo?.version;
-		if (!version || version === app.getVersion()) return { kind: "current" };
+		if (!result?.isUpdateAvailable || !version || version === app.getVersion())
+			return { kind: "current" };
 		return { kind: "available", version };
 	} catch (error) {
 		// A missing or malformed feed is the expected failure on any release published before
@@ -77,7 +78,7 @@ export async function downloadSelfUpdate(): Promise<UpdateOutcome> {
 	try {
 		const autoUpdater = await getUpdater();
 		await autoUpdater.downloadUpdate();
-		return { kind: "downloaded", version: app.getVersion() };
+		return { kind: "downloaded" };
 	} catch (error) {
 		return { kind: "failed", error: error instanceof Error ? error : new Error(String(error)) };
 	}

@@ -106,7 +106,7 @@ describe("self-update flow", () => {
 				mocks.autoUpdater.autoDownload,
 				mocks.autoUpdater.autoInstallOnAppQuit,
 			);
-			return Promise.resolve({ updateInfo: { version: "1.9.2" } });
+			return Promise.resolve({ isUpdateAvailable: true, updateInfo: { version: "1.9.2" } });
 		});
 
 		await checkForSelfUpdate("nsis");
@@ -115,7 +115,10 @@ describe("self-update flow", () => {
 	});
 
 	it("reports current when the feed offers the running version", async () => {
-		mocks.autoUpdater.checkForUpdates.mockResolvedValue({ updateInfo: { version: "1.9.2" } });
+		mocks.autoUpdater.checkForUpdates.mockResolvedValue({
+			isUpdateAvailable: true,
+			updateInfo: { version: "1.9.2" },
+		});
 		await expect(checkForSelfUpdate("appimage")).resolves.toEqual({ kind: "current" });
 	});
 
@@ -125,7 +128,10 @@ describe("self-update flow", () => {
 	});
 
 	it("surfaces an available version", async () => {
-		mocks.autoUpdater.checkForUpdates.mockResolvedValue({ updateInfo: { version: "1.10.0" } });
+		mocks.autoUpdater.checkForUpdates.mockResolvedValue({
+			isUpdateAvailable: true,
+			updateInfo: { version: "1.10.0" },
+		});
 		await expect(checkForSelfUpdate("dmg")).resolves.toEqual({
 			kind: "available",
 			version: "1.10.0",
@@ -133,9 +139,32 @@ describe("self-update flow", () => {
 		expect(mocks.autoUpdater.downloadUpdate).not.toHaveBeenCalled();
 	});
 
+	it("does not offer a transfer the updater has rejected", async () => {
+		mocks.autoUpdater.checkForUpdates.mockResolvedValue({
+			isUpdateAvailable: false,
+			updateInfo: { version: "1.10.0" },
+		});
+		await expect(checkForSelfUpdate("dmg")).resolves.toEqual({ kind: "current" });
+		expect(mocks.autoUpdater.downloadUpdate).not.toHaveBeenCalled();
+	});
+
 	it("reports downloaded only after the requested transfer finishes", async () => {
-		mocks.autoUpdater.downloadUpdate.mockResolvedValue(["/cache/update"]);
-		await expect(downloadSelfUpdate()).resolves.toEqual({ kind: "downloaded", version: "1.9.2" });
+		let finish: (() => void) | undefined;
+		mocks.autoUpdater.downloadUpdate.mockImplementation(
+			() =>
+				new Promise<void>((resolve) => {
+					finish = resolve;
+				}),
+		);
+		let completed = false;
+		const transfer = downloadSelfUpdate().then((result) => {
+			completed = true;
+			return result;
+		});
+		await vi.waitFor(() => expect(finish).toBeDefined());
+		expect(completed).toBe(false);
+		finish?.();
+		await expect(transfer).resolves.toEqual({ kind: "downloaded" });
 		expect(mocks.autoUpdater.downloadUpdate).toHaveBeenCalledOnce();
 	});
 
