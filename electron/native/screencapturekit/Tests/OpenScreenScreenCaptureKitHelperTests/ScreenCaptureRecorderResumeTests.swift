@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreMedia
 import CoreVideo
+import ObjectiveC
 import XCTest
 @testable import OpenScreenScreenCaptureKitHelper
 
@@ -232,6 +233,81 @@ final class ScreenCaptureRecorderResumeTests: XCTestCase {
 		XCTAssertEqual(fixture.failures.count, 0, "A late Pause closing frame is not a writer failure")
 	}
 
+	func testOverlappingStopsJoinOneFinalizationAndPreserveBothExistingAndNewFootage() async throws {
+		let fixture = try makeFixture()
+		registerTeardown(fixture)
+		await fixture.recorder.resume()
+		try fixture.appendScreenFrame()
+		try await Task.sleep(nanoseconds: 50_000_000)
+		try fixture.appendScreenFrame()
+		async let first: Void = fixture.recorder.stop()
+		async let second: Void = fixture.recorder.stop()
+		_ = await (first, second)
+		await fixture.recorder.stop()
+		XCTAssertEqual(fixture.events(named: "recording-stopped").count, 1)
+		XCTAssertEqual(fixture.events(code: "clip-resume-rejected").count, 0)
+		XCTAssertEqual(try Data(contentsOf: fixture.previousClip), fixture.previousClipData)
+		let asset = AVURLAsset(url: fixture.attemptedClip)
+		let tracks = try await asset.loadTracks(withMediaType: .video)
+		let duration = try await asset.load(.duration)
+		XCTAssertEqual(tracks.count, 1)
+		XCTAssertGreaterThan(duration.seconds, 0.02)
+	}
+
+	func testAdversaryLateContinueAfterStopMustRemainSilent() async throws {
+		let fixture = try makeFixture()
+		registerTeardown(fixture)
+		await fixture.recorder.stop()
+		let before = fixture.events().count
+		await fixture.recorder.resume()
+		XCTAssertEqual(fixture.events().count, before, "A late Continue after Stop was previously a no-op")
+		XCTAssertEqual(fixture.events(code: "clip-resume-rejected").count, 0)
+	}
+	func testAdversaryDuplicateContinueAfterAckMustRemainSilentAndKeepFootage() async throws {
+		let fixture = try makeFixture()
+		registerTeardown(fixture)
+		await fixture.recorder.resume()
+		try fixture.appendScreenFrame()
+		XCTAssertEqual(fixture.events(named: "recording-resumed").count, 1)
+		let before = fixture.events().count
+		await fixture.recorder.resume()
+		XCTAssertEqual(fixture.events().count, before, "Duplicate Continue while recording was previously a no-op")
+		XCTAssertEqual(fixture.events(code: "clip-resume-rejected").count, 0)
+		try fixture.appendScreenFrame()
+		await fixture.recorder.stop()
+		let tracks = try await AVURLAsset(url: fixture.attemptedClip).loadTracks(withMediaType: .video)
+		XCTAssertEqual(tracks.count, 1)
+	}
+
+	func testReviewStopBetweenNativeSessionAndLifecycleEpochKeepsAppendedMedia() async throws {
+		let fixture = try makeFixture()
+		registerTeardown(fixture)
+		await fixture.recorder.resume()
+		let lifecycle = try XCTUnwrap(Mirror(reflecting: fixture.recorder).children.first { $0.label == "lifecycle" }?.value as? RecordingLifecycle)
+		let nativeMethod = try XCTUnwrap(class_getInstanceMethod(AVAssetWriter.self, #selector(AVAssetWriter.startSession(atSourceTime:))))
+		let gateMethod = try XCTUnwrap(class_getInstanceMethod(AVAssetWriter.self, #selector(AVAssetWriter.row4_startSession(atSourceTime:))))
+		method_exchangeImplementations(nativeMethod, gateMethod)
+		defer { method_exchangeImplementations(nativeMethod, gateMethod) }
+		let append = Task.detached { try fixture.appendScreenFrame() }
+		XCTAssertEqual(Row4NativeSessionGate.entered.wait(timeout: .now() + 2), .success)
+		let stop = Task.detached { await fixture.recorder.stop() }
+		for _ in 0..<1000 {
+			if lifecycle.isStopping { break }
+			try await Task.sleep(nanoseconds: 1_000_000)
+		}
+		XCTAssertTrue(lifecycle.isStopping, "Stop must own its transition before native startSession returns")
+		Row4NativeSessionGate.proceed.signal()
+		_ = try await append.value
+		await stop.value
+		let stopped = try XCTUnwrap(fixture.events(named: "recording-stopped").first)
+		let clips = try XCTUnwrap(stopped["clips"] as? [[String: Any]])
+		XCTAssertEqual(clips.count, 1, "A real successfully appended frame must survive Stop")
+		XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.attemptedClip.path), "Stop deleted actually appended media")
+		let tracks = try await AVURLAsset(url: fixture.attemptedClip).loadTracks(withMediaType: .video)
+		XCTAssertEqual(tracks.count, 1)
+		XCTAssertEqual(try Data(contentsOf: fixture.previousClip), fixture.previousClipData)
+	}
+
 	private func makeFixture(
 		quality: String = "standard",
 		fps: Int = 30,
@@ -361,5 +437,18 @@ final class ScreenCaptureRecorderResumeTests: XCTestCase {
 		XCTAssertEqual(CMSampleBufferCreateReadyWithImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: image,
 			formatDescription: try XCTUnwrap(format), sampleTiming: &timing, sampleBufferOut: &sample), noErr)
 		return try XCTUnwrap(sample)
+	}
+}
+
+private enum Row4NativeSessionGate {
+	static let entered = DispatchSemaphore(value: 0)
+	static let proceed = DispatchSemaphore(value: 0)
+}
+
+private extension AVAssetWriter {
+	@objc func row4_startSession(atSourceTime startTime: CMTime) {
+		Row4NativeSessionGate.entered.signal()
+		_ = Row4NativeSessionGate.proceed.wait(timeout: .now() + 5)
+		self.row4_startSession(atSourceTime: startTime)
 	}
 }

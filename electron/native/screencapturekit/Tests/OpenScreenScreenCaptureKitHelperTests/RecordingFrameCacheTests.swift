@@ -55,14 +55,23 @@ final class RecordingFrameCacheTests: XCTestCase {
 	}
 
 	func testEveryClipAcknowledgesOnlyItsFirstSuccessfulAppend() {
-		var barrier = RecordingStartBarrier()
-		barrier.prepare(clipIndex: 0)
-		XCTAssertNil(barrier.acknowledgeAppend(succeeded: false))
-		XCTAssertEqual(barrier.acknowledgeAppend(succeeded: true), 0)
-		XCTAssertNil(barrier.acknowledgeAppend(succeeded: true))
-		barrier.prepare(clipIndex: 1)
-		XCTAssertNil(barrier.acknowledgeAppend(succeeded: false))
-		XCTAssertEqual(barrier.acknowledgeAppend(succeeded: true), 1)
+		let source = NSObject()
+		let lifecycle = RecordingLifecycle()
+		lifecycle.transition(.installSource(ObjectIdentifier(source)))
+		let startup = RecordingStartup(lifecycle: lifecycle)
+		startup.begin(at: time(100))
+		XCTAssertNil(startup.acknowledgeClip(videoAppended: false, gridCaughtUp: true))
+		XCTAssertEqual(startup.acknowledgeClip(videoAppended: true, gridCaughtUp: true), 0)
+		XCTAssertNil(startup.acknowledgeClip(videoAppended: true, gridCaughtUp: true))
+		lifecycle.transition(.pause)
+		startup.cancel()
+		lifecycle.transition(.detachWriter)
+		startup.configure(originals: [], audioTracks: [], clipIndex: 1)
+		lifecycle.transition(.beginResume(generation: lifecycle.capture.source.generation, previousClipIndex: 0))
+		startup.begin(at: time(200))
+		lifecycle.transition(.acceptResumeFrames)
+		XCTAssertNil(startup.acknowledgeClip(videoAppended: false, gridCaughtUp: true))
+		XCTAssertEqual(startup.acknowledgeClip(videoAppended: true, gridCaughtUp: true), 1)
 	}
 
 	func testResumeRetimesTheLatestCompleteFrameWithoutChangingTheOriginal() throws {

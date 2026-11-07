@@ -7,30 +7,17 @@ struct RecordingStreamRecovery {
 		case pausedSourceUnavailable
 		case activeFailure
 	}
-	private var current: ObjectIdentifier?
-	private var sourceIsInactive = false
-	private(set) var needsReplacement = false
-	private(set) var generation: UInt64 = 0
-
-	var isSourceUsable: Bool {
-		current != nil && !needsReplacement && !sourceIsInactive
-	}
-
-	var canAttemptResume: Bool {
-		current != nil && !sourceIsInactive
-	}
-
-	mutating func install(_ stream: AnyObject) {
-		current = ObjectIdentifier(stream)
-		needsReplacement = false
-		sourceIsInactive = false
-		generation &+= 1
-	}
-
+	let lifecycle: RecordingLifecycle
+	init(lifecycle: RecordingLifecycle = RecordingLifecycle()) { self.lifecycle = lifecycle }
+	var generation: UInt64 { lifecycle.capture.source.generation }
+	var needsReplacement: Bool { lifecycle.capture.source.needsReplacement }
+	var isSourceUsable: Bool { lifecycle.capture.source.usable }
+	var canAttemptResume: Bool { lifecycle.capture.source.canAttemptResume }
+	func install(_ stream: AnyObject) { lifecycle.transition(.installSource(ObjectIdentifier(stream))) }
 	func acceptsSamples(from stream: AnyObject) -> Bool {
-		current == ObjectIdentifier(stream) && isSourceUsable
+		let source = lifecycle.capture.source
+		return source.identity == ObjectIdentifier(stream) && source.usable
 	}
-
 	func acceptsSamples(from stream: AnyObject, systemAudioStream: AnyObject?, isSystemAudio: Bool) -> Bool {
 		if let systemAudioStream {
 			if isSystemAudio { return stream === systemAudioStream }
@@ -38,27 +25,10 @@ struct RecordingStreamRecovery {
 		}
 		return acceptsSamples(from: stream)
 	}
-
-	mutating func becameInactive(_ stream: AnyObject) -> Bool {
-		guard current == ObjectIdentifier(stream), !needsReplacement, !sourceIsInactive else { return false }
-		sourceIsInactive = true
-		generation &+= 1
-		return true
-	}
-
-	mutating func becameActive(_ stream: AnyObject) -> Bool {
-		guard current == ObjectIdentifier(stream), !needsReplacement, sourceIsInactive else { return false }
-		sourceIsInactive = false
-		return true
-	}
-
-	mutating func invalidate() { needsReplacement = true }
-
-	mutating func stopped(_ stream: AnyObject, paused: Bool, stopping: Bool) -> StopDisposition {
-		guard current == ObjectIdentifier(stream), !stopping, !needsReplacement else { return .ignored }
-		needsReplacement = true
-		return paused ? .pausedSourceUnavailable : .activeFailure
-	}
+	func becameInactive(_ stream: AnyObject) -> Bool { lifecycle.transition(.sourceInactive(ObjectIdentifier(stream))).changed }
+	func becameActive(_ stream: AnyObject) -> Bool { lifecycle.transition(.sourceActive(ObjectIdentifier(stream))).changed }
+	func invalidate() { lifecycle.transition(.invalidateSource) }
+	func stopped(_ stream: AnyObject) -> StopDisposition { lifecycle.transition(.sourceStopped(ObjectIdentifier(stream))).sourceStop }
 
 	static func canRejectResume(paused: Bool, stopping: Bool, terminalFailure: Bool,
 		acknowledgedClipIndex: Int?, previousClipIndex: Int, resumePending: Bool = false) -> Bool {

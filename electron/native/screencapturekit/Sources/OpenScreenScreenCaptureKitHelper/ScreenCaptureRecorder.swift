@@ -45,11 +45,12 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	private var stream: SCStream?
 	private var systemAudioStream: SCStream?
 	private var activeSystemAudioFilter: SCContentFilter?
-	private var streamRecovery = RecordingStreamRecovery()
+	private let lifecycle: RecordingLifecycle
+	private let streamRecovery: RecordingStreamRecovery
 	private var activeFilter: SCContentFilter?
 	private var activeConfiguration: SCStreamConfiguration?
 	/// The live frame interval while a paused stream runs throttled. Command lane only.
-	private var pausedFullFrameInterval: CMTime?
+	private var pausedFullFrameInterval: CMTime? { if case .throttled(let interval) = lifecycle.capture.sourceRate { return interval }; return nil }
 	/// Runs work on the helper's serialized command lane, so a delayed throttle can never
 	/// overlap Continue, Stop or a reconfiguration.
 	var submitCommand: ((@escaping @Sendable () async -> Void) -> Void)?
@@ -67,9 +68,12 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	private var originalsStartedOnStream: Set<String> = []
 	private var droppedOriginalSamples: [String: Int] = [:]
 	private var readyAudioTracks: Set<String> = []
-	private var startup = RecordingStartup()
+	private let startup: RecordingStartup
 	/// Pending Continue state; every access is owned by `sampleQueue`.
-	private(set) var pendingResume: (generation: UInt64, previousClipIndex: Int, commandInFlight: Bool)?
+	var pendingResume: (generation: UInt64, previousClipIndex: Int, commandInFlight: Bool)? {
+		guard !lifecycle.isStopping, let resume = lifecycle.capture.resume else { return nil }
+		return (resume.generation, resume.previousClipIndex, resume.commandInFlight)
+	}
 	private var startupTimer: RecordingStartupWatchdog?
 	private var firstScreenFrame: CMSampleBuffer?
 	private let diagnosticTiming = ProcessInfo.processInfo.environment["OPENSCREEN_CAPTURE_DIAGNOSTICS"] == "1"
@@ -82,15 +86,13 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	// microphone/system stems without changing the one-file-per-clip project model.
 	private var audioInputs: [AVAssetWriterInput] = []
 	private var compatibilityAudio: CompatibilityAudioWriter?
-	private var didStartWriting = false
-	private var startBarrier = RecordingStartBarrier()
+	private var didStartWriting: Bool { lifecycle.capture.clip.hasSession }
 	private var frameCache = RecordingFrameCache()
 	private var boundaryWarnings = RecordingBoundaryWarnings()
-	private var acceptsCachedFrames = true
-	private var didReportWriterFailure = false
-	private var isStopping = false
-	private var isPaused = false
-	private var hasTerminalFailure = false
+	private var acceptsCachedFrames: Bool { if case .stable = lifecycle.capture.sourceCache { return true }; return false }
+	private var isStopping: Bool { lifecycle.isStopping }
+	private var isPaused: Bool { lifecycle.isPaused }
+	private var hasTerminalFailure: Bool { lifecycle.hasTerminalFailure }
 	private var terminationBoundary = RecordingTerminationBoundary()
 	private(set) var currentClipIndex = 0
 	private var currentClipPath: String?
@@ -113,6 +115,10 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		request: RecordingRequest,
 		unexpectedStopHandler: @escaping (ScreenCaptureRecorder, Error) -> Void
 	) {
+		let lifecycle = RecordingLifecycle()
+		self.lifecycle = lifecycle
+		streamRecovery = RecordingStreamRecovery(lifecycle: lifecycle)
+		startup = RecordingStartup(lifecycle: lifecycle)
 		self.request = request
 		cadence = RecordingCadence(fps: request.video.fps)
 		captureTelemetry = CaptureTelemetry(requestedVideoFps: request.video.fps)
@@ -130,7 +136,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	func preparePausedResumeFixture(source: AnyObject, seed: CMSampleBuffer? = nil) {
 		stateQueue.sync {
 			streamRecovery.install(source)
-			isPaused = true
+			lifecycle.transition(.pause)
 		}
 		if let seed { syncOnSampleQueue { frameCache.observe(seed) } }
 	}
@@ -147,6 +153,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	}
 
 	func start() async throws {
+		guard lifecycle.transition(.start).accepted else { throw HelperError.writerSetupFailed("The recorder cannot start from its current state.") }
 		var stepStarted = DispatchTime.now().uptimeNanoseconds
 		var startSteps: [String: Double] = ["startEnteredEpochMs": Date().timeIntervalSince1970 * 1_000]
 		let markStep = { [self] (name: String) in
@@ -329,13 +336,13 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		// Samples arriving during filter/configuration changes cannot be assigned
 		// reliably to either source. A resumed clip must never seed an old source.
 		sampleQueue.sync {
-			acceptsCachedFrames = false
+			lifecycle.transition(.beginSourceChange)
 			frameCache.invalidateCapturedFrame()
 		}
 		defer {
 			sampleDelivery.barrier {
 				frameCache.invalidateCapturedFrame()
-				acceptsCachedFrames = true
+				lifecycle.transition(.endSourceChange)
 			}
 		}
 
@@ -387,7 +394,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 				rollback.append(("camera", { try await self.configureCamera(for: self.request) }))
 				let rollbackErrors = await RecordingSetupRollback.run(rollback)
 				if !rollbackErrors.isEmpty {
-					stateQueue.sync { hasTerminalFailure = true }
+					_ = stateQueue.sync { lifecycle.transition(.fail) }
 					emitError(
 						code: "writer-failed-during-capture",
 						message: "Capture reconfiguration and rollback failed: \(error). Rollback: \(rollbackErrors.joined(separator: "; "))"
@@ -404,7 +411,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			activeFilter = setup.filter
 			activeConfiguration = setup.configuration
 			// The new configuration runs at the full rate already.
-			pausedFullFrameInterval = nil
+			lifecycle.transition(.restoreSourceRate)
 			activeFilterIgnoresExcludedWindows = setup.ignoresExcludedWindows
 			outputWidth = setup.width
 			outputHeight = setup.height
@@ -425,14 +432,15 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	func stop() async {
 		await ShareableContentCache.shared.stopKeepingFresh()
 		let requestedEndTime = CMClockGetTime(CMClockGetHostTimeClock())
-		let boundary = stateQueue.sync { () -> CMTime? in
-			guard !isStopping else { return nil }
-			isStopping = true
+		let stop = stateQueue.sync { lifecycle.transition(.stop) }
+		guard let completion = stop.stop else { return }
+		if !stop.ownsStop { await completion.wait(); return }
+		let endTime = stateQueue.sync {
 			pauseGeneration += 1
 			return terminationBoundary.endingAt(requestedEndTime)
 		}
-		guard let endTime = boundary else { return }
-		syncOnSampleQueue { pendingResume = nil }
+		defer { lifecycle.transition(.stopped); completion.finish() }
+
 		let finalizationActivity = processActivity.acquire()
 		endRecordingActivity()
 		defer { finalizationActivity.end() }
@@ -482,8 +490,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 				return false
 			}
 
-			isPaused = true
-			return true
+			return lifecycle.transition(.pause).changed
 		}
 
 		guard didPause else { return }
@@ -522,26 +529,16 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	func resume() async {
 		await ShareableContentCache.shared.stopKeepingFresh()
 		stateQueue.sync { pauseGeneration += 1 }
-		let resumeState = stateQueue.sync {
-			(!isStopping && isPaused && !hasTerminalFailure, hasTerminalFailure)
-		}
-		guard resumeState.0 else {
-			if resumeState.1 {
-				emitError(
-					code: "clip-start-failed",
-					message: "The current writer failed. Stop now to keep earlier completed clips."
-				)
-			}
-			return
-		}
-
 		let previousClipIndex = currentClipIndex
 		var resumeGeneration = stateQueue.sync { streamRecovery.generation }
-		guard stateQueue.sync(execute: { streamRecovery.canAttemptResume }) else {
-			emitObservedEvent(RecordingStreamRecovery.rejectedResumePayload(
-				previousClipIndex: previousClipIndex,
-				message: "The selected capture source is unavailable. Select an available source and try again."
-			))
+		guard lifecycle.transition(.beginResume(generation: resumeGeneration, previousClipIndex: previousClipIndex)).accepted else {
+			guard isPaused, !isStopping, pendingResume == nil else { return }
+			if hasTerminalFailure {
+				emitError(code: "clip-start-failed", message: "The current writer failed. Stop now to keep earlier completed clips.")
+			} else {
+				emitObservedEvent(RecordingStreamRecovery.rejectedResumePayload(previousClipIndex: previousClipIndex,
+					message: "The selected capture source is unavailable or the recorder is not paused. Select an available source and try again."))
+			}
 			return
 		}
 
@@ -557,7 +554,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			}
 			let nextClipIndex = previousClipIndex + 1
 			var seed = try syncOnSampleQueue {
-				pendingResume = (generation: resumeGeneration, previousClipIndex: previousClipIndex, commandInFlight: true)
+				lifecycle.transition(.resumeSeed(generation: resumeGeneration, previousClipIndex: previousClipIndex))
 				return try frameCache.resumedFrame(
 					at: CMClockGetTime(CMClockGetHostTimeClock()), fps: request.video.fps
 				)
@@ -608,7 +605,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 					}
 					let startTime = CMSampleBufferGetPresentationTimeStamp(seed)
 					writer.startSession(atSourceTime: startTime)
-					didStartWriting = true
+
 					clipStartTime = startTime
 					beginStartup(at: startTime, firstFrame: seed)
 					compatibilityAudio?.begin(at: startTime)
@@ -619,7 +616,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 					guard streamRecovery.isSourceUsable, !isStopping, !hasTerminalFailure else {
 						throw HelperError.sourceNotFound("The selected capture source is unavailable. Select an available source and try again.")
 					}
-					isPaused = false
+					lifecycle.transition(.acceptResumeFrames)
 				}
 				return nil
 			}
@@ -632,7 +629,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 						guard streamRecovery.isSourceUsable, !isStopping, !hasTerminalFailure else {
 							throw HelperError.sourceNotFound("The selected capture source is unavailable. Select an available source and try again.")
 						}
-						isPaused = false
+						lifecycle.transition(.acceptResumeFrames)
 					}
 					recordSuccessfulVideoAppend(seed, sourceGeneration: resumeGeneration, acknowledgeReadiness: false)
 					if acknowledgeClipReadiness(expectedSourceGeneration: resumeGeneration) { return }
@@ -647,14 +644,13 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 				}
 			}
 			let rejected = syncOnSampleQueue { () -> Bool in
-				pendingResume?.commandInFlight = false
+				lifecycle.transition(.awaitResumeAcknowledgement)
 				return rejectPendingResumeIfSourceChanged()
 			}
 			if rejected { return }
 			resumed = true
 		} catch {
 			let rejected = syncOnSampleQueue { () -> Bool in
-				defer { pendingResume = nil }
 				let rejected = stateQueue.sync {
 					RecordingStreamRecovery.canRejectResume(paused: isPaused, stopping: isStopping,
 						terminalFailure: hasTerminalFailure, acknowledgedClipIndex: startup.isLive ? currentClipIndex : nil,
@@ -664,7 +660,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 				discardCurrentWriterOnSampleQueue()
 				frameCache.invalidateCapturedFrame()
 				currentClipIndex = previousClipIndex
-				stateQueue.sync { isPaused = true }
+				_ = stateQueue.sync { lifecycle.transition(.rejectResume) }
 				return true
 			}
 			if rejected { emitObservedEvent(RecordingStreamRecovery.rejectedResumePayload(previousClipIndex: previousClipIndex, message: "\(error)")) }
@@ -699,7 +695,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		activeConfiguration.minimumFrameInterval = Self.pausedFrameInterval
 		do {
 			try await stream.updateConfiguration(activeConfiguration)
-			pausedFullFrameInterval = fullInterval
+			lifecycle.transition(.throttleSource(fullInterval))
 		} catch {
 			activeConfiguration.minimumFrameInterval = fullInterval
 			emit(["event": "warning", "code": "paused-throttle-failed", "message": "\(error)"])
@@ -711,7 +707,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		activeConfiguration.minimumFrameInterval = fullInterval
 		// A stream due for replacement restarts from this configuration at the full rate.
 		if stateQueue.sync(execute: { streamRecovery.needsReplacement }) {
-			pausedFullFrameInterval = nil
+			lifecycle.transition(.restoreSourceRate)
 			return
 		}
 		if let stream, stateQueue.sync(execute: { streamRecovery.isSourceUsable }) {
@@ -720,7 +716,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 				throw error
 			}
 			emit(["event": "resume-stage", "key": "full-rate"])
-			pausedFullFrameInterval = nil
+			lifecycle.transition(.restoreSourceRate)
 		}
 	}
 
@@ -741,8 +737,8 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			} else {
 				stateQueue.sync {
 					terminationBoundary.recordFailure(at: CMClockGetTime(CMClockGetHostTimeClock()))
-					isPaused = true
-					hasTerminalFailure = true
+					lifecycle.transition(.pause)
+					lifecycle.transition(.fail)
 				}
 				endRecordingActivity()
 				unexpectedStopHandler(self, error)
@@ -750,13 +746,12 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			return
 		}
 		let disposition = syncOnSampleQueue {
-			let resumePending = pendingResume != nil
 			return stateQueue.sync { () -> RecordingStreamRecovery.StopDisposition in
-				let disposition = streamRecovery.stopped(stream, paused: isPaused || resumePending, stopping: isStopping)
+				let disposition = streamRecovery.stopped(stream)
 				if disposition == .activeFailure {
 					terminationBoundary.recordFailure(at: CMClockGetTime(CMClockGetHostTimeClock()))
-					isPaused = true
-					hasTerminalFailure = true
+					lifecycle.transition(.pause)
+					lifecycle.transition(.fail)
 				}
 				return disposition
 			}
@@ -873,7 +868,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			}
 			writer.startSession(atSourceTime: presentationTime)
 			if diagnosticTiming { startupTiming["screenStartSessionMs"] = milliseconds(since: initializationStarted) }
-			didStartWriting = true
+
 			clipStartTime = presentationTime
 			beginStartup(at: presentationTime, firstFrame: sampleBuffer)
 			compatibilityAudio?.begin(at: presentationTime)
@@ -948,8 +943,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		discardCurrentWriterOnSampleQueue()
 		frameCache.invalidateCapturedFrame()
 		currentClipIndex = pending.previousClipIndex
-		stateQueue.sync { isPaused = true }
-		pendingResume = nil
+		_ = stateQueue.sync { lifecycle.transition(.rejectResume) }
 		endRecordingActivity()
 		emitObservedEvent(RecordingStreamRecovery.rejectedResumePayload(
 			previousClipIndex: pending.previousClipIndex,
@@ -972,9 +966,8 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			let clipIndex = stateQueue.sync { () -> Int? in
 				guard streamRecovery.isSourceUsable,
 					(expectedGeneration.map { streamRecovery.generation == $0 } ?? true),
-					startup.acknowledge(videoAppended: true, gridCaughtUp: caughtUp)
+					let clipIndex = startup.acknowledgeClip(videoAppended: true, gridCaughtUp: caughtUp, expectedGeneration: expectedGeneration)
 				else { return nil }
-				guard let clipIndex = startBarrier.acknowledgeAppend(succeeded: true) else { return nil }
 				emitObservedEvent([
 					"event": clipIndex == 0 ? "recording-started" : "recording-resumed",
 					"timestampMs": Int(Date().timeIntervalSince1970 * 1000),
@@ -986,7 +979,6 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 				])
 				return clipIndex
 			}
-			if clipIndex != nil { pendingResume = nil }
 			if clipIndex != nil, diagnosticTiming { emitTiming(stage: "startup-ready") }
 		} catch { reportWriterFailure("\(error)", detectedAt: startupDeadline.map { min($0, now) } ?? now) }
 		return false
@@ -1008,15 +1000,14 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	/// This event answers "when did the writer die"; that one answers "did stopping
 	/// work". Two questions, two codes.
 	private func reportWriterFailure(_ stage: String, detectedAt: CMTime? = nil) {
-		guard !didReportWriterFailure, let writer else {
+		guard let writer, lifecycle.transition(.announceFailure).changed else {
 			return
 		}
-		didReportWriterFailure = true
 		let failureTime = detectedAt ?? CMClockGetTime(CMClockGetHostTimeClock())
 		stateQueue.sync {
 			terminationBoundary.recordFailure(at: failureTime)
-			isPaused = true
-			hasTerminalFailure = true
+			lifecycle.transition(.pause)
+			lifecycle.transition(.fail)
 		}
 		endRecordingActivity()
 		emitObservedEvent([
@@ -1144,8 +1135,8 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		self.writer = writer
 		self.videoInput = input
 		currentClipPath = outputPath
-		didStartWriting = false
-		didReportWriterFailure = false
+		lifecycle.transition(.detachWriter)
+
 		clipStartTime = nil
 		clipLastTime = nil
 		clipLastFrameDuration = .zero
@@ -1207,13 +1198,14 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		if compatibilityAudio != nil { audioTracks.insert("mixed") }
 		if request.audio.system.enabled { audioTracks.insert("system") }
 		if nativeMicrophoneEnabled { audioTracks.insert("microphone") }
-		startup = RecordingStartup(originals: Set(originals.keys), audioTracks: audioTracks)
+		guard startup.configure(originals: Set(originals.keys), audioTracks: audioTracks, clipIndex: index) else {
+			throw HelperError.writerSetupFailed("The recorder cannot prepare a writer from its current state.")
+		}
 		readyAudioTracks = []; firstScreenFrame = nil
 		startupTimer?.cancel(); startupTimer = nil
 		cadenceTimer?.cancel(); cadenceTimer = nil; cadence.reset(); lastScheduledSourceTime = nil
 		captureTelemetry.beginClip()
 		frameCache.beginClip()
-		startBarrier.prepare(clipIndex: index)
 		stateQueue.sync {
 			// A fatal recording cannot Continue; healthy newly prepared clips have
 			// their own boundary and must never inherit an earlier writer's epoch.
@@ -1263,7 +1255,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			self.firstScreenFrame = nil; self.readyAudioTracks = []
 			self.startupTimer?.cancel(); self.startupTimer = nil
 			self.currentClipPath = nil
-			self.didStartWriting = false
+			lifecycle.transition(.detachWriter)
 			self.clipStartTime = nil
 			self.clipLastTime = nil
 			self.clipLastFrameDuration = .zero
@@ -1290,7 +1282,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		audioInputs = []
 		compatibilityAudio = nil
 		currentClipPath = nil
-		didStartWriting = false
+		lifecycle.transition(.detachWriter)
 		clipStartTime = nil
 		clipLastTime = nil
 		clipLastFrameDuration = .zero

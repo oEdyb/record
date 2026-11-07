@@ -8,7 +8,7 @@ final class RecordingStreamRecoveryTests: XCTestCase {
 		let screen = NSObject()
 		let audio = NSObject()
 		let retired = NSObject()
-		var recovery = RecordingStreamRecovery()
+		let recovery = RecordingStreamRecovery()
 		recovery.install(screen)
 		XCTAssertTrue(recovery.acceptsSamples(from: audio, systemAudioStream: audio, isSystemAudio: true))
 		XCTAssertFalse(recovery.acceptsSamples(from: screen, systemAudioStream: audio, isSystemAudio: true))
@@ -21,10 +21,11 @@ final class RecordingStreamRecoveryTests: XCTestCase {
 
 	func testClosedPausedSourceCanBeReplacedWithoutEndingTheLogicalSession() {
 		let closedSource = NSObject(), selectedSource = NSObject()
-		var recovery = RecordingStreamRecovery()
+		let recovery = RecordingStreamRecovery()
 		recovery.install(closedSource)
+		recovery.lifecycle.transition(.pause)
 		XCTAssertTrue(recovery.acceptsSamples(from: closedSource))
-		XCTAssertEqual(recovery.stopped(closedSource, paused: true, stopping: false), .pausedSourceUnavailable)
+		XCTAssertEqual(recovery.stopped(closedSource), .pausedSourceUnavailable)
 		XCTAssertTrue(recovery.needsReplacement)
 		XCTAssertTrue(recovery.canAttemptResume, "A stopped stream may be replaced on Continue")
 		XCTAssertFalse(recovery.acceptsSamples(from: closedSource))
@@ -34,21 +35,22 @@ final class RecordingStreamRecoveryTests: XCTestCase {
 		XCTAssertFalse(recovery.needsReplacement)
 		XCTAssertTrue(recovery.acceptsSamples(from: selectedSource))
 		XCTAssertFalse(recovery.acceptsSamples(from: closedSource))
-		XCTAssertEqual(recovery.stopped(closedSource, paused: false, stopping: false), .ignored,
+		XCTAssertEqual(recovery.stopped(closedSource), .ignored,
 			"A late failed-source callback cannot stop the replacement recording")
 		XCTAssertFalse(recovery.needsReplacement)
 	}
 
 	func testActiveCaptureFailureIsTerminalAndStopCallbacksCannotBecomeNewFailures() {
 		let activeSource = NSObject()
-		var recovery = RecordingStreamRecovery()
+		let recovery = RecordingStreamRecovery()
 		recovery.install(activeSource)
-		XCTAssertEqual(recovery.stopped(activeSource, paused: false, stopping: false), .activeFailure)
+		XCTAssertEqual(recovery.stopped(activeSource), .activeFailure)
 		XCTAssertTrue(recovery.needsReplacement)
-		XCTAssertEqual(recovery.stopped(activeSource, paused: true, stopping: false), .ignored)
+		XCTAssertEqual(recovery.stopped(activeSource), .ignored)
 		XCTAssertFalse(RecordingStreamRecovery.canRejectResume(paused: true, stopping: false, terminalFailure: true, acknowledgedClipIndex: nil, previousClipIndex: 0))
 		recovery.install(activeSource)
-		XCTAssertEqual(recovery.stopped(activeSource, paused: false, stopping: true), .ignored)
+		recovery.lifecycle.transition(.stop)
+		XCTAssertEqual(recovery.stopped(activeSource), .ignored)
 		XCTAssertFalse(recovery.needsReplacement)
 	}
 
@@ -58,19 +60,19 @@ final class RecordingStreamRecoveryTests: XCTestCase {
 			"An unacknowledged Continue remains retryable after the renderer-visible pause flag flips")
 		XCTAssertFalse(RecordingStreamRecovery.canRejectResume(paused: true, stopping: true, terminalFailure: false, acknowledgedClipIndex: nil, previousClipIndex: 0))
 		XCTAssertFalse(RecordingStreamRecovery.canRejectResume(paused: true, stopping: false, terminalFailure: false, acknowledgedClipIndex: 1, previousClipIndex: 0))
-		var recovery = RecordingStreamRecovery()
+		let recovery = RecordingStreamRecovery()
 		let attemptedSource = NSObject()
 		recovery.install(attemptedSource)
 		recovery.invalidate()
 		XCTAssertFalse(recovery.acceptsSamples(from: attemptedSource))
-		XCTAssertEqual(recovery.stopped(attemptedSource, paused: false, stopping: false), .ignored,
+		XCTAssertEqual(recovery.stopped(attemptedSource), .ignored,
 			"The failed start attempt was already classified while paused")
 		XCTAssertTrue(recovery.needsReplacement)
 	}
 
 	func testInactiveSourceCannotResumeUntilItBecomesActiveAgain() {
 		let source = NSObject(), unrelated = NSObject()
-		var recovery = RecordingStreamRecovery()
+		let recovery = RecordingStreamRecovery()
 		recovery.install(source)
 		let activeGeneration = recovery.generation
 		XCTAssertTrue(recovery.isSourceUsable)
@@ -89,10 +91,11 @@ final class RecordingStreamRecoveryTests: XCTestCase {
 
 	func testStoppedSourceCannotBeRevivedByActivityCallbacks() {
 		let source = NSObject(), replacement = NSObject()
-		var recovery = RecordingStreamRecovery()
+		let recovery = RecordingStreamRecovery()
 		recovery.install(source)
 		XCTAssertTrue(recovery.becameInactive(source))
-		XCTAssertEqual(recovery.stopped(source, paused: true, stopping: false), .pausedSourceUnavailable)
+		recovery.lifecycle.transition(.pause)
+		XCTAssertEqual(recovery.stopped(source), .pausedSourceUnavailable)
 		XCTAssertTrue(recovery.needsReplacement)
 		XCTAssertFalse(recovery.becameActive(source))
 		XCTAssertFalse(recovery.isSourceUsable)

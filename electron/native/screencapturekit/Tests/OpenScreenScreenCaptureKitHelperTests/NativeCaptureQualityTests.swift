@@ -509,7 +509,9 @@ final class NativeCaptureQualityTests: XCTestCase {
 			CVPixelBufferUnlockBaseAddress(pixels, [])
 		}
 		var cache = RecordingFrameCache(); cache.observe(first)
-		var startup = RecordingStartup(audioTracks: ["mixed", "system", "microphone"])
+		let startup = RecordingStartup(audioTracks: ["mixed", "system", "microphone"])
+		let startupSource = NSObject()
+		startup.lifecycle.transition(.installSource(ObjectIdentifier(startupSource)))
 		startup.begin(at: epoch)
 		var grid = RecordingCadence(fps: 60); grid.begin(at: epoch, firstFramePending: true)
 		XCTAssertTrue(writer.startWriting()); writer.startSession(atSourceTime: epoch)
@@ -715,8 +717,8 @@ final class NativeCaptureQualityTests: XCTestCase {
 		owner.queue.async { entered.signal(); gate.wait() }
 		XCTAssertEqual(entered.wait(timeout: .now() + 1), .success)
 		let videoQueue = DispatchQueue(label: "test.video-with-cold-camera")
-		var readiness = RecordingStartBarrier()
-		readiness.prepare(clipIndex: 0)
+		let publicationLock = NSLock()
+		var publications = 0
 		let cameraReady = expectation(description: "Camera readiness follows its successful append")
 		let videoDone = expectation(description: "64 live video ticks run during the observed 1.06-second camera stall")
 		let seed = try screenSample(at: time(100.023), width: 1552, height: 1552)
@@ -726,7 +728,8 @@ final class NativeCaptureQualityTests: XCTestCase {
 				videoQueue.async {
 					if case .success(let completed) = result, let metadata = completed.metadata {
 						XCTAssertEqual(metadata.offsetMs, 23, accuracy: 0.01)
-						XCTAssertEqual(readiness.acknowledgeAppend(succeeded: true, requiredSourcesReady: true), 0)
+						XCTAssertTrue(completed.firstAppend)
+						XCTAssertEqual(publicationLock.withLock { publications += 1; return publications }, 1)
 						cameraReady.fulfill()
 					}
 				}
@@ -740,7 +743,7 @@ final class NativeCaptureQualityTests: XCTestCase {
 				do { let due = try grid.dueTimes(at: videoEpoch + CMTime(value: Int64(index), timescale: 60)); XCTAssertEqual(due.count, 1); grid.didAppend() }
 				catch { XCTFail("Cold camera blocked the independent video grid: \(error)") }
 			}
-			XCTAssertNil(readiness.acknowledgeAppend(succeeded: true, requiredSourcesReady: false), "Queued camera frames are not writer readiness")
+			XCTAssertEqual(publicationLock.withLock { publications }, 0, "Queued camera frames are not writer readiness")
 			videoDone.fulfill()
 		}
 		await fulfillment(of: [videoDone], timeout: 1)

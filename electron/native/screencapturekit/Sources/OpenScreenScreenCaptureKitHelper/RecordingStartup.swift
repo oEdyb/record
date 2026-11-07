@@ -5,42 +5,33 @@ import Foundation
 /// immutable even if a first encoder append or requested source arrives late.
 struct RecordingStartup {
 	static let sourceDeadlineSeconds = 2.0
-	private(set) var epoch: CMTime?
-	private(set) var isLive = false
-	private(set) var lateSources: [String] = []
-	private var cancelled = false
-	let originals: Set<String>
-	let audioTracks: Set<String>
-
-	init(originals: Set<String> = [], audioTracks: Set<String> = []) {
-		self.originals = originals; self.audioTracks = audioTracks
+	let lifecycle: RecordingLifecycle
+	init(originals: Set<String> = [], audioTracks: Set<String> = [], lifecycle: RecordingLifecycle = RecordingLifecycle()) {
+		self.lifecycle = lifecycle
+		configure(originals: originals, audioTracks: audioTracks)
 	}
-	mutating func begin(at time: CMTime) { if epoch == nil { epoch = time } }
-	/// Screen readiness makes the take live. Camera and audio join later on the same
-	/// epoch: the ones still missing at the deadline are returned once so the caller can
-	/// warn while the take keeps recording. A source that never arrives is reported again
-	/// when its original finishes with no samples. Only the screen itself fails the take.
-	mutating func checkDeadline(at now: CMTime, videoAppended: Bool, readyOriginals: Set<String>, readyAudio: Set<String>) throws -> [String] {
-		guard !cancelled, let epoch, now.isNumeric,
-			now - epoch >= CMTime(seconds: Self.sourceDeadlineSeconds, preferredTimescale: 1_000_000) else { return [] }
-		guard videoAppended else {
-			throw HelperError.writerSetupFailed("Recording startup exceeded two seconds waiting for screen video.")
-		}
-		guard isLive else {
-			throw HelperError.writerSetupFailed("Recording startup exceeded two seconds waiting for the video timeline to catch up.")
-		}
-		let missing = originals.subtracting(readyOriginals).sorted() + audioTracks.subtracting(readyAudio).sorted().map { "\($0) AAC" }
-		let newlyLate = missing.filter { !lateSources.contains($0) }
-		lateSources += newlyLate
-		return newlyLate
+	var epoch: CMTime? { lifecycle.capture.clip.startup?.epoch }
+	var isLive: Bool { lifecycle.capture.clip.isLive }
+	var lateSources: [String] { lifecycle.capture.clip.startup?.lateSources ?? [] }
+	var originals: Set<String> { lifecycle.capture.clip.inputs.originals }
+	var audioTracks: Set<String> { lifecycle.capture.clip.inputs.audioTracks }
+	@discardableResult func configure(originals: Set<String>, audioTracks: Set<String>, clipIndex: Int = 0) -> Bool {
+		lifecycle.transition(.prepareClip(RecordingLifecycle.Inputs(originals: originals, audioTracks: audioTracks), index: clipIndex)).accepted
 	}
-	mutating func acknowledge(videoAppended: Bool, gridCaughtUp: Bool) -> Bool {
-		guard !cancelled, !isLive, epoch != nil, videoAppended, gridCaughtUp else { return false }
-		isLive = true
-		return true
+	func begin(at time: CMTime) { lifecycle.transition(.beginEpoch(time)) }
+	func checkDeadline(at now: CMTime, videoAppended: Bool, readyOriginals: Set<String>, readyAudio: Set<String>) throws -> [String] {
+		let result = lifecycle.transition(.checkDeadline(now: now, videoAppended: videoAppended, originals: readyOriginals, audio: readyAudio))
+		if let error = result.error { throw error }
+		return result.lateSources
+	}
+	func acknowledge(videoAppended: Bool, gridCaughtUp: Bool, expectedGeneration: UInt64? = nil) -> Bool {
+		acknowledgeClip(videoAppended: videoAppended, gridCaughtUp: gridCaughtUp, expectedGeneration: expectedGeneration) != nil
+	}
+	func acknowledgeClip(videoAppended: Bool, gridCaughtUp: Bool, expectedGeneration: UInt64? = nil) -> Int? {
+		lifecycle.transition(.acknowledge(videoAppended: videoAppended, gridCaughtUp: gridCaughtUp, expectedGeneration: expectedGeneration)).acknowledgedIndex
 	}
 	func backlogLimit(fps: Int) -> Int { isLive ? RecordingCadence.maximumCatchUpFrames : max(1, fps) }
-	mutating func cancel() { cancelled = true }
+	func cancel() { lifecycle.transition(.cancelReadiness) }
 }
 
 /// Independent of media delivery: missing sources or permanently not-ready

@@ -1,20 +1,6 @@
 import CoreMedia
 import CoreVideo
 
-struct RecordingStartBarrier {
-	private var pendingClipIndex: Int?
-
-	mutating func prepare(clipIndex: Int) {
-		pendingClipIndex = clipIndex
-	}
-
-	mutating func acknowledgeAppend(succeeded: Bool, requiredSourcesReady: Bool = true) -> Int? {
-		guard succeeded, requiredSourcesReady, let clipIndex = pendingClipIndex else { return nil }
-		pendingClipIndex = nil
-		return clipIndex
-	}
-}
-
 struct RecordingFrameCache {
 	private var capturedFrame: CMSampleBuffer?
 	private var previousCapturedFrame: CMSampleBuffer?

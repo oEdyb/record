@@ -3,12 +3,18 @@ import XCTest
 @testable import OpenScreenScreenCaptureKitHelper
 
 final class RecordingStartupTests: XCTestCase {
+	private let source = NSObject()
+	private func makeStartup(originals: Set<String> = [], audioTracks: Set<String> = []) -> RecordingStartup {
+		let lifecycle = RecordingLifecycle()
+		lifecycle.transition(.installSource(ObjectIdentifier(source)))
+		return RecordingStartup(originals: originals, audioTracks: audioTracks, lifecycle: lifecycle)
+	}
 	private func time(_ seconds: Double) -> CMTime { CMTime(seconds: seconds, preferredTimescale: 600_000) }
 
 	func testScreenVideoAndCaughtUpGridMakeTheTakeLiveWhileOtherSourcesJoinLater() throws {
 		let originals: Set<String> = ["webcamVideoPath", "systemAudioPath", "microphoneAudioPath"]
 		let tracks: Set<String> = ["mixed", "system", "microphone"]
-		var startup = RecordingStartup(originals: originals, audioTracks: tracks)
+		var startup = makeStartup(originals: originals, audioTracks: tracks)
 		startup.begin(at: time(100)); startup.begin(at: time(101))
 		XCTAssertEqual(startup.epoch, time(100), "Late successful append cannot move the source epoch")
 		XCTAssertFalse(startup.acknowledge(videoAppended: false, gridCaughtUp: true))
@@ -36,14 +42,14 @@ final class RecordingStartupTests: XCTestCase {
 	}
 
 	func testOneSecondVideoBacklogIsBoundedSeparatelyFromTwoSecondSourceDeadline() throws {
-		var startup = RecordingStartup(originals: ["webcamVideoPath"])
+		var startup = makeStartup(originals: ["webcamVideoPath"])
 		startup.begin(at: time(100))
 		var grid = RecordingCadence(fps: 60); grid.begin(at: time(100), firstFramePending: true)
 		XCTAssertEqual(try grid.dueTimes(at: time(100.99), maximumCatchUpFrames: startup.backlogLimit(fps: 60)).count, 60)
 		XCTAssertThrowsError(try grid.dueTimes(at: time(101), maximumCatchUpFrames: startup.backlogLimit(fps: 60)))
 		XCTAssertEqual(try startup.checkDeadline(at: time(101.06), videoAppended: true, readyOriginals: [], readyAudio: []), [])
 		XCTAssertTrue(startup.acknowledge(videoAppended: true, gridCaughtUp: true), "The previously observed1.06sec camera initialization remains valid when video is current")
-		var next = RecordingStartup(originals: ["webcamVideoPath"]); next.begin(at: time(200))
+		var next = makeStartup(originals: ["webcamVideoPath"]); next.begin(at: time(200))
 		XCTAssertFalse(next.isLive); XCTAssertEqual(next.backlogLimit(fps: 60), 60)
 		XCTAssertThrowsError(try next.checkDeadline(at: time(202), videoAppended: true, readyOriginals: [], readyAudio: []),
 			"A take that is still not live two seconds after its first frame fails") { error in
@@ -58,7 +64,7 @@ final class RecordingStartupTests: XCTestCase {
 		let queue = DispatchQueue(label: "test.startup-no-media-events")
 		let epoch = CMClockGetTime(CMClockGetHostTimeClock())
 		let timeout = expectation(description: "Independent monotonic watchdog names the late microphone")
-		var startup = RecordingStartup(originals: ["microphoneAudioPath"], audioTracks: ["microphone"])
+		var startup = makeStartup(originals: ["microphoneAudioPath"], audioTracks: ["microphone"])
 		startup.begin(at: epoch)
 		XCTAssertTrue(startup.acknowledge(videoAppended: true, gridCaughtUp: true))
 		let live = startup
