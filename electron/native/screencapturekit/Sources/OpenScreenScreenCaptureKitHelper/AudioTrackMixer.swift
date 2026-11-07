@@ -67,7 +67,7 @@ final class AudioTrackMixer {
 		static let finalFlushTimeout = 0.25
 	}
 
-	private final class TrackOutput {
+	final class TrackOutput {
 		let input: AVAssetWriterInput
 		let label: String
 		private var pending: [CMSampleBuffer] = []
@@ -76,13 +76,46 @@ final class AudioTrackMixer {
 		private var maxPendingChunks = 0
 		private var blockedStartedAt: Date?
 		private var blockedSeconds = 0.0
-		private var didWarnAboutBacklog = false
+		private enum BacklogWarning { case quiet, announced }
+		private enum Progress { case allocated, pendingBackpressure, appended }
+		private enum State { case open(Progress, BacklogWarning), draining(Progress), failed(Failure, Progress), completed(Progress) }
+		private enum Event { case enqueue, append, backpressure, warn, drain, complete, fail(Failure) }
+		private var state: State = .open(.allocated, .quiet)
+		private var progress: Progress {
+			switch state { case .open(let value, _), .draining(let value), .completed(let value): return value; case .failed(_, let value): return value }
+		}
+		private var shouldWarnAboutBacklog: Bool { if case .open(_, .quiet) = state { return true }; return false }
+		@discardableResult private func transition(_ event: Event) -> Bool {
+			let before: String
+			switch state { case .open: before = "open"; case .draining: before = "draining"; case .failed: before = "failed"; case .completed: before = "completed" }
+			var accepted = true
+			switch event {
+			case .enqueue: if case .open = state {} else { accepted = false }
+			case .append:
+				switch state { case .open(_, let warning): state = .open(.appended, warning); case .draining: state = .draining(.appended); default: accepted = false }
+			case .backpressure:
+				if case .open(let progress, let warning) = state {
+					if case .allocated = progress { state = .open(.pendingBackpressure, warning) }
+				}
+			case .warn:
+				if case .open(let progress, .quiet) = state { state = .open(progress, .announced) } else { accepted = false }
+			case .drain:
+				if case .open(let progress, _) = state { state = .draining(progress) }
+			case .complete:
+				if case .draining(let progress) = state { state = .completed(progress) }
+			case .fail(let failure): state = .failed(failure, progress)
+			}
+			if !accepted { log(before, String(describing: event)) }
+			return accepted
+		}
+		private let log: (String, String) -> Void
 		private let append: Append
 		private let writer: AVAssetWriter?
-		private(set) var failure: Failure?
-		private(set) var didAppend = false
+		var failure: Failure? { if case .failed(let failure, _) = state { return failure }; return nil }
+		var didAppend: Bool { if case .appended = progress { return true }; return false }
 
-		init(input: AVAssetWriterInput, label: String, writer: AVAssetWriter?, append: @escaping Append) {
+		init(input: AVAssetWriterInput, label: String, writer: AVAssetWriter?, append: @escaping Append, log: @escaping (String, String) -> Void) {
+			self.log = log
 			self.input = input
 			self.label = label
 			self.writer = writer
@@ -90,7 +123,7 @@ final class AudioTrackMixer {
 		}
 
 		func enqueue(_ sampleBuffer: CMSampleBuffer) {
-			guard failure == nil else { return }
+			guard transition(.enqueue) else { return }
 			pending.append(sampleBuffer)
 			pendingBytes += CMSampleBufferGetTotalSampleSize(sampleBuffer)
 			maxPendingBytes = max(maxPendingBytes, pendingBytes)
@@ -112,7 +145,10 @@ final class AudioTrackMixer {
 				guard appendFirstPending() else { return }
 			}
 			updateBlockedState()
+			if !pending.isEmpty { transition(.backpressure) }
 			if let deadline {
+				transition(.drain)
+				defer { transition(.complete) }
 				while !pending.isEmpty {
 					if input.isReadyForMoreMediaData {
 						guard appendFirstPending() else { return }
@@ -142,8 +178,7 @@ final class AudioTrackMixer {
 			for _ in 0 ..< removeCount {
 				removeFirstPending()
 			}
-			if !didWarnAboutBacklog {
-				didWarnAboutBacklog = true
+			if shouldWarnAboutBacklog && transition(.warn) {
 				emit([
 					"event": "warning",
 					"code": "audio-mixer-backlog",
@@ -155,13 +190,13 @@ final class AudioTrackMixer {
 		private func appendFirstPending() -> Bool {
 			guard let sample = pending.first else { return true }
 			guard append(input, sample) else {
-				failure = Failure(error: HelperError.writerSetupFailed(
+				transition(.fail(Failure(error: HelperError.writerSetupFailed(
 					writer?.error.map { "\($0)" } ?? "The \(label) AAC input rejected a compatibility audio sample."
-				), hostTime: CMClockGetTime(CMClockGetHostTimeClock()))
+				), hostTime: CMClockGetTime(CMClockGetHostTimeClock()))))
 				return false
 			}
 			removeFirstPending()
-			didAppend = true
+			transition(.append)
 			return true
 		}
 
@@ -196,9 +231,42 @@ final class AudioTrackMixer {
 	private let outputFormatDescription: CMAudioFormatDescription?
 
 	private var sources = [SourceTimeline](repeating: SourceTimeline(), count: Source.allCases.count)
-	private var sessionStart: CMTime?
-	/// Timeline origin: frame 0 of the mixed track, in the writer's time domain.
-	private var anchor: CMTime?
+	private struct Timeline { let epoch: CMTime; var anchor: CMTime? }
+	private enum State { case allocated, epochSet(CMTime), sourceSessionStarted(Timeline), draining(Timeline?), completed(Timeline?, Telemetry) }
+	private enum Event { case begin(CMTime), anchor(CMTime), ingest, drain, complete(Telemetry) }
+	private var state: State = .allocated
+	private let log: (String, String) -> Void
+	private var timeline: Timeline? {
+		switch state { case .allocated: return nil; case .epochSet(let epoch): return Timeline(epoch: epoch)
+		case .sourceSessionStarted(let value): return value; case .draining(let value), .completed(let value, _): return value }
+	}
+	private var sessionStart: CMTime? { timeline?.epoch }
+	private var anchor: CMTime? { timeline?.anchor }
+	var lifecycleName: String {
+		switch state { case .allocated: return "allocated"; case .epochSet: return "epoch-set"; case .sourceSessionStarted: return "source-session-started"; case .draining: return "draining"; case .completed: return "completed" }
+	}
+	@discardableResult private func transition(_ event: Event) -> Bool {
+		let before = lifecycleName
+		let name: String
+		var accepted = true
+		switch event {
+		case .begin(let epoch):
+			name = "begin"
+			if case .allocated = state, epoch.isValid { state = .epochSet(epoch) } else { accepted = false }
+		case .anchor(let anchor):
+			name = "anchor"
+			if case .epochSet(let epoch) = state { state = .sourceSessionStarted(Timeline(epoch: epoch, anchor: anchor)) } else { accepted = false }
+		case .ingest:
+			name = "ingest"
+			switch state { case .epochSet, .sourceSessionStarted: break; default: accepted = false }
+		case .drain:
+			name = "drain"
+			if case .completed = state {} else { state = .draining(timeline) }
+		case .complete(let telemetry): name = "complete"; state = .completed(timeline, telemetry)
+		}
+		if !accepted { log(before, name) }
+		return accepted
+	}
 	/// Absolute frame index of the next chunk to emit.
 	private var cursor: Int64 = 0
 	private var didWarnAboutDecode: Set<Int> = []
@@ -221,11 +289,13 @@ final class AudioTrackMixer {
 		includesMicrophone: Bool,
 		microphoneGain: Double,
 		writer: AVAssetWriter? = nil,
-		append: @escaping Append = { $0.append($1) }
+		append: @escaping Append = { $0.append($1) },
+		log: @escaping (String, String) -> Void = { from, event in emit(["event": "warning", "code": "illegal-audio-mixer-transition", "from": from, "transition": event]) }
 	) {
-		self.mixedOutput = TrackOutput(input: mixedInput, label: "mixed preview", writer: writer, append: append)
-		self.systemOutput = systemInput.map { TrackOutput(input: $0, label: "system audio", writer: writer, append: append) }
-		self.microphoneOutput = microphoneInput.map { TrackOutput(input: $0, label: "microphone", writer: writer, append: append) }
+		self.log = log
+		self.mixedOutput = TrackOutput(input: mixedInput, label: "mixed preview", writer: writer, append: append, log: log)
+		self.systemOutput = systemInput.map { TrackOutput(input: $0, label: "system audio", writer: writer, append: append, log: log) }
+		self.microphoneOutput = microphoneInput.map { TrackOutput(input: $0, label: "microphone", writer: writer, append: append, log: log) }
 		self.includesSystemAudio = includesSystemAudio
 		self.includesMicrophone = includesMicrophone
 		// The request carries MIC_GAIN_BOOST (1.4); Windows applies it unconditionally and so
@@ -238,15 +308,11 @@ final class AudioTrackMixer {
 	/// Anchors the mixer to the writer session. Audio delivered before this is dropped — the
 	/// writer would reject anything ahead of its session start anyway.
 	func beginTimeline(at sessionStart: CMTime) {
-		guard self.sessionStart == nil, sessionStart.isValid else {
-			return
-		}
-
-		self.sessionStart = sessionStart
+		transition(.begin(sessionStart))
 	}
 
 	func ingest(_ sampleBuffer: CMSampleBuffer, from source: Source) {
-		guard failure == nil, includes(source), let sessionStart else {
+		guard transition(.ingest), failure == nil, includes(source), let sessionStart else {
 			return
 		}
 		let presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
@@ -263,11 +329,11 @@ final class AudioTrackMixer {
 		}
 
 		if anchor == nil {
-			anchor = CMTimeConvertScale(
+			transition(.anchor(CMTimeConvertScale(
 				CMTimeMaximum(presentationTime, sessionStart),
 				timescale: CMTimeScale(MixFormat.sampleRate),
 				method: .roundHalfAwayFromZero
-			)
+			)))
 		}
 		guard let anchor else {
 			return
@@ -285,11 +351,19 @@ final class AudioTrackMixer {
 	/// Writes out everything still buffered. Call once, on the audio owner, before the
 	/// writer input is marked as finished.
 	func finish() -> Telemetry {
+		if case .completed(_, let telemetry) = state { return telemetry }
+		transition(.drain)
 		drain(flushing: true)
 		let deadline = Date().addingTimeInterval(MixFormat.finalFlushTimeout)
 		if failure == nil { mixedOutput.flush(until: deadline) }
 		if failure == nil { systemOutput?.flush(until: deadline) }
 		if failure == nil { microphoneOutput?.flush(until: deadline) }
+		let telemetry = self.telemetry
+		transition(.complete(telemetry))
+		return telemetry
+	}
+
+	var telemetry: Telemetry {
 		let outputs = [mixedOutput, systemOutput, microphoneOutput].compactMap { $0 }
 		return Telemetry(
 			maxPendingBytes: outputs.map(\.telemetry.maxPendingBytes).max() ?? 0,

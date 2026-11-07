@@ -6,6 +6,21 @@ import XCTest
 @testable import OpenScreenScreenCaptureKitHelper
 
 final class ScreenCaptureRecorderResumeTests: XCTestCase {
+	func testSystemAudioLossDuringResumePreparationIsRecoverable() async throws {
+		let fixture = try makeFixture(); registerTeardown(fixture)
+		let lifecycle = try XCTUnwrap(Mirror(reflecting: fixture.recorder).children.first { $0.label == "lifecycle" }?.value as? RecordingLifecycle)
+		XCTAssertTrue(lifecycle.transition(.beginResume(generation: lifecycle.capture.source.generation, previousClipIndex: 0)).accepted)
+		fixture.recorder.handleSystemAudioStop(TestError.sourceStopped)
+		XCTAssertEqual(fixture.failures.count, 0)
+		XCTAssertFalse(lifecycle.hasTerminalFailure)
+		XCTAssertTrue(lifecycle.transition(.rejectResume).accepted)
+		await fixture.recorder.resume(); try fixture.appendScreenFrame()
+		await fixture.recorder.stop()
+		XCTAssertEqual(fixture.events(named: "recording-resumed").count, 1)
+		XCTAssertEqual(try Data(contentsOf: fixture.previousClip), fixture.previousClipData)
+		let tracks = try await AVURLAsset(url: fixture.attemptedClip).loadTracks(withMediaType: .video)
+		XCTAssertEqual(tracks.count, 1)
+	}
 	func testInactiveSourceRejectsUnacknowledgedResumeOnceAndAllowsCleanRetry() async throws {
 		let fixture = try makeFixture()
 		registerTeardown(fixture)

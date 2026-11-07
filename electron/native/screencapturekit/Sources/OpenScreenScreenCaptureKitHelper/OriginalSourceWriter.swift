@@ -22,11 +22,20 @@ final class OriginalSourceAdmission: @unchecked Sendable {
 	private let lock = NSLock()
 	private var tickets: [(id: Int, bytes: Int)] = []
 	private var nextID = 0
-	private var accepting = true
+	private enum State { case accepting, draining, failed(CMTime) }
+	private enum Event { case reserve, close, fail(CMTime) }
+	private var state: State = .accepting
+	private var accepting: Bool { if case .accepting = state { return true }; return false }
+	@discardableResult private func transition(_ event: Event) -> Bool {
+		switch event {
+		case .reserve: return accepting
+		case .close: if case .accepting = state { state = .draining }; return true
+		case .fail(let time): if case .failed = state {} else { state = .failed(time) }; return true
+		}
+	}
 	private var bytes = 0
 	private var maximumDepth = 0
 	private var maximumRetainedBytes = 0
-	private var firstFailure: CMTime?
 	static let maximumSamples = 32
 	static let maximumBytes = 8 * 1024 * 1024
 	static let maximumCameraBytes = 512 * 1024 * 1024
@@ -43,7 +52,10 @@ final class OriginalSourceAdmission: @unchecked Sendable {
 
 	func reserve(bytes size: Int) throws -> Int {
 		lock.lock(); defer { lock.unlock() }
-		guard accepting, size > 0, size <= byteLimit,
+		return try reserveLocked(bytes: size)
+	}
+	private func reserveLocked(bytes size: Int) throws -> Int {
+		guard transition(.reserve), size > 0, size <= byteLimit,
 			tickets.count < sampleLimit, bytes <= byteLimit - size else {
 			throw OriginalAdmissionOverflow(accepting: accepting, sampleBytes: size, queuedSamples: tickets.count,
 				sampleLimit: sampleLimit, queuedBytes: bytes, byteLimit: byteLimit)
@@ -54,6 +66,12 @@ final class OriginalSourceAdmission: @unchecked Sendable {
 		maximumRetainedBytes = max(maximumRetainedBytes, bytes)
 		return nextID
 	}
+	func enqueue(bytes size: Int, on queue: DispatchQueue, perform: @escaping (Int) -> Void) throws {
+		lock.lock(); defer { lock.unlock() }
+		let ticket = try reserveLocked(bytes: size)
+		queue.async { perform(ticket) }
+	}
+
 	func consume(_ count: Int) {
 		lock.lock(); defer { lock.unlock() }
 		for _ in 0..<min(count, tickets.count) { bytes -= tickets.removeFirst().bytes }
@@ -62,9 +80,9 @@ final class OriginalSourceAdmission: @unchecked Sendable {
 		lock.lock(); defer { lock.unlock() }
 		if let index = tickets.firstIndex(where: { $0.id == id }) { bytes -= tickets.remove(at: index).bytes }
 	}
-	func close() { lock.lock(); accepting = false; lock.unlock() }
-	func fail(at time: CMTime) { lock.lock(); accepting = false; if firstFailure == nil { firstFailure = time }; lock.unlock() }
-	var failureTime: CMTime? { lock.lock(); defer { lock.unlock() }; return firstFailure }
+	func close() { lock.lock(); transition(.close); lock.unlock() }
+	func fail(at time: CMTime) { lock.lock(); transition(.fail(time)); lock.unlock() }
+	var failureTime: CMTime? { lock.lock(); defer { lock.unlock() }; if case .failed(let time) = state { return time }; return nil }
 	var maxDepth: Int { lock.lock(); defer { lock.unlock() }; return maximumDepth }
 	var maxBytes: Int { lock.lock(); defer { lock.unlock() }; return maximumRetainedBytes }
 	var retainedCount: Int { lock.lock(); defer { lock.unlock() }; return tickets.count }
@@ -83,7 +101,6 @@ final class OriginalSourceWriter: @unchecked Sendable {
 	let original: OriginalTrackWriter
 	let queue: DispatchQueue
 	private let admission: OriginalSourceAdmission
-	private var failed = false
 	var failureTime: CMTime? { admission.failureTime }
 	var maximumQueueDepth: Int { max(admission.maxDepth, queue.sync { original.maximumQueueDepth }) }
 	var maximumQueuedBytes: Int { admission.maxBytes }
@@ -95,9 +112,8 @@ final class OriginalSourceWriter: @unchecked Sendable {
 	func begin(at epoch: CMTime) { queue.async { self.original.begin(at: epoch) } }
 
 	func append(_ sample: CMSampleBuffer, completion: @escaping (Result<Completion, Error>, CMTime) -> Void) throws {
-		let ticket = try admission.reserve(bytes: Self.storageBytes(sample))
-		queue.async {
-			guard !self.failed else { self.admission.release(ticket); return }
+		try admission.enqueue(bytes: Self.storageBytes(sample), on: queue) { ticket in
+			guard self.admission.failureTime == nil else { self.admission.release(ticket); return }
 			let started = DispatchTime.now().uptimeNanoseconds
 			let previousCount = self.original.appendedSamples
 			do {
@@ -109,7 +125,7 @@ final class OriginalSourceWriter: @unchecked Sendable {
 					elapsedMs: Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000, hostTime: hostTime)), hostTime)
 			} catch {
 				let failureTime = CMClockGetTime(CMClockGetHostTimeClock())
-				self.failed = true; self.admission.fail(at: failureTime)
+				self.admission.fail(at: failureTime)
 				self.admission.consume(self.original.appendedSamples - previousCount)
 				self.admission.release(ticket)
 				completion(.failure(error), failureTime)
@@ -124,6 +140,7 @@ final class OriginalSourceWriter: @unchecked Sendable {
 		await withCheckedContinuation { continuation in queue.async { continuation.resume() } }
 	}
 	func finish() async throws -> Bool {
+		admission.close()
 		let before = queue.sync { original.appendedSamples }
 		let saved = try await original.finish(on: queue)
 		admission.consume(queue.sync { original.appendedSamples - before })

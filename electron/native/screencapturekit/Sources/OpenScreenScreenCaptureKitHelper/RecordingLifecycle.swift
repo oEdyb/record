@@ -54,27 +54,27 @@ final class RecordingLifecycle {
 		}
 	}
 	struct Resume {
-		enum Stage { case commandSuspended, commandAccepting, awaitingAcknowledgement }
+		enum Stage { case preparing, commandSuspended, commandAccepting, awaitingAcknowledgement }
 		var generation: UInt64
 		let previousClipIndex: Int
 		var stage: Stage
 		var commandInFlight: Bool {
-			switch stage { case .commandSuspended, .commandAccepting: return true; case .awaitingAcknowledgement: return false }
+			switch stage { case .preparing, .commandSuspended, .commandAccepting: return true; case .awaitingAcknowledgement: return false }
 		}
 	}
 	enum Transport { case prepared, active, paused, resuming(Resume) }
 	enum Source {
-		case uninstalled(UInt64), active(ObjectIdentifier, UInt64), inactive(ObjectIdentifier, UInt64), replacementRequired(ObjectIdentifier, UInt64)
+		case uninstalled(UInt64), active(ObjectIdentifier, UInt64), inactive(ObjectIdentifier, UInt64), replacementRequired(ObjectIdentifier, UInt64), inactiveReplacementRequired(ObjectIdentifier, UInt64)
 		var generation: UInt64 {
-			switch self { case .uninstalled(let value), .active(_, let value), .inactive(_, let value), .replacementRequired(_, let value): return value }
+			switch self { case .uninstalled(let value), .active(_, let value), .inactive(_, let value), .replacementRequired(_, let value), .inactiveReplacementRequired(_, let value): return value }
 		}
 		var identity: ObjectIdentifier? {
-			switch self { case .uninstalled: return nil; case .active(let id, _), .inactive(let id, _), .replacementRequired(let id, _): return id }
+			switch self { case .uninstalled: return nil; case .active(let id, _), .inactive(let id, _), .replacementRequired(let id, _), .inactiveReplacementRequired(let id, _): return id }
 		}
 		var usable: Bool { if case .active = self { return true }; return false }
-		var needsReplacement: Bool { if case .replacementRequired = self { return true }; return false }
+		var needsReplacement: Bool { switch self { case .replacementRequired, .inactiveReplacementRequired: return true; default: return false } }
 		var canAttemptResume: Bool {
-			switch self { case .active, .replacementRequired: return true; case .inactive, .uninstalled: return false }
+			switch self { case .active, .replacementRequired: return true; case .inactive, .inactiveReplacementRequired, .uninstalled: return false }
 		}
 	}
 	enum SourceCache { case stable, changing }
@@ -91,7 +91,7 @@ final class RecordingLifecycle {
 			switch transport {
 			case .prepared, .active: return false
 			case .paused: return true
-			case .resuming(let value): if case .commandSuspended = value.stage { return true }; return false
+			case .resuming(let value): switch value.stage { case .preparing, .commandSuspended: return true; default: return false }
 			}
 		}
 	}
@@ -104,6 +104,7 @@ final class RecordingLifecycle {
 		}
 	}
 	enum Event {
+		case systemAudioStopped
 		case start, pause, beginResume(generation: UInt64, previousClipIndex: Int), resumeSeed(generation: UInt64, previousClipIndex: Int), acceptResumeFrames, awaitResumeAcknowledgement, rejectResume, fail, announceFailure, stop, stopped
 		case prepareClip(Inputs, index: Int), beginEpoch(CMTime), acknowledge(videoAppended: Bool, gridCaughtUp: Bool, expectedGeneration: UInt64?), cancelReadiness, detachWriter
 		case checkDeadline(now: CMTime, videoAppended: Bool, originals: Set<String>, audio: Set<String>)
@@ -111,7 +112,7 @@ final class RecordingLifecycle {
 		case installSource(ObjectIdentifier), invalidateSource, sourceInactive(ObjectIdentifier), sourceActive(ObjectIdentifier), sourceStopped(ObjectIdentifier)
 		var name: String {
 			switch self {
-			case .beginSourceChange: return "begin-source-change"; case .endSourceChange: return "end-source-change"; case .throttleSource: return "throttle-source"; case .restoreSourceRate: return "restore-source-rate"; case .start: return "start"; case .pause: return "pause"; case .beginResume: return "begin-resume"; case .resumeSeed: return "resume-seed"; case .acceptResumeFrames: return "accept-resume-frames"; case .awaitResumeAcknowledgement: return "await-resume-acknowledgement"; case .rejectResume: return "reject-resume"; case .fail: return "failure"; case .announceFailure: return "announce-failure"; case .stop: return "stop"; case .stopped: return "stopped"; case .prepareClip: return "prepare-clip"; case .beginEpoch: return "begin-epoch"; case .acknowledge: return "acknowledge"; case .cancelReadiness: return "cancel-readiness"; case .detachWriter: return "detach-writer"; case .checkDeadline: return "check-deadline"; case .installSource: return "install-source"; case .invalidateSource: return "invalidate-source"; case .sourceInactive: return "source-inactive"; case .sourceActive: return "source-active"; case .sourceStopped: return "source-stopped"
+			case .systemAudioStopped: return "system-audio-stopped"; case .beginSourceChange: return "begin-source-change"; case .endSourceChange: return "end-source-change"; case .throttleSource: return "throttle-source"; case .restoreSourceRate: return "restore-source-rate"; case .start: return "start"; case .pause: return "pause"; case .beginResume: return "begin-resume"; case .resumeSeed: return "resume-seed"; case .acceptResumeFrames: return "accept-resume-frames"; case .awaitResumeAcknowledgement: return "await-resume-acknowledgement"; case .rejectResume: return "reject-resume"; case .fail: return "failure"; case .announceFailure: return "announce-failure"; case .stop: return "stop"; case .stopped: return "stopped"; case .prepareClip: return "prepare-clip"; case .beginEpoch: return "begin-epoch"; case .acknowledge: return "acknowledge"; case .cancelReadiness: return "cancel-readiness"; case .detachWriter: return "detach-writer"; case .checkDeadline: return "check-deadline"; case .installSource: return "install-source"; case .invalidateSource: return "invalidate-source"; case .sourceInactive: return "source-inactive"; case .sourceActive: return "source-active"; case .sourceStopped: return "source-stopped"
 			}
 		}
 	}
@@ -136,12 +137,13 @@ final class RecordingLifecycle {
 	var isStopping: Bool { read { if case .stopping = $0 { return true }; if case .completed = $0 { return true }; return false } }
 	var hasTerminalFailure: Bool { read { switch $0 { case .terminalFailure, .stopping(_, .failed(_), _), .completed(_, .failed(_), _): return true; default: return false } } }
 	var isPaused: Bool { read { if case .terminalFailure = $0 { return true }; return $0.capture.paused } }
+
 	var name: String { read(Self.name) }
 	private static func name(_ state: State) -> String {
 		switch state {
 		case .stopping: return "stopping"; case .completed: return "completed"; case .terminalFailure: return "terminal-failure"
 		case .running(let capture):
-			switch capture.source { case .inactive: return "source-inactive"; case .replacementRequired: return "replacement-required"; default: break }
+			switch capture.source { case .inactive, .inactiveReplacementRequired: return "source-inactive"; case .replacementRequired: return "replacement-required"; default: break }
 			switch capture.transport {
 			case .prepared: return "prepared"; case .paused: return "paused"
 			case .resuming(let resume): return resume.commandInFlight ? "resume-command-in-flight" : "awaiting-resume-seed"
@@ -152,6 +154,12 @@ final class RecordingLifecycle {
 	@discardableResult func transition(_ event: Event) -> Outcome {
 		lock.lock()
 		let before = Self.name(state)
+		if case .completed = state {
+			if case .stop = event {} else {
+				lock.unlock(); log(before, event.name)
+				return Outcome(accepted: false)
+			}
+		}
 		var context = state.capture
 		var result = Outcome()
 		func reject() { result.accepted = false }
@@ -165,13 +173,24 @@ final class RecordingLifecycle {
 			}
 		}
 		switch event {
+		case .systemAudioStopped:
+			if running() {
+				let retry: Bool
+				switch context.transport {
+				case .paused: retry = true
+				case .resuming(let resume): if case .preparing = resume.stage { retry = true } else { retry = false }
+				default: retry = false
+				}
+				if retry { result.sourceStop = .pausedSourceUnavailable }
+				else { result.sourceStop = .activeFailure; context.transport = .paused; state = .terminalFailure(context, .detected); result.changed = true }
+			}
 		case .start:
 			if running(), case .prepared = context.transport { context.transport = .active; saveCapture(); result.changed = true } else { reject() }
 		case .pause:
 			if running(), !context.paused { context.transport = .paused; saveCapture(); result.changed = true }
 		case .beginResume(let generation, let index):
 			if running(), case .paused = context.transport, context.source.canAttemptResume {
-				context.transport = .resuming(Resume(generation: generation, previousClipIndex: index, stage: .commandSuspended)); saveCapture(); result.changed = true
+				context.transport = .resuming(Resume(generation: generation, previousClipIndex: index, stage: .preparing)); saveCapture(); result.changed = true
 			} else { reject() }
 		case .resumeSeed(let generation, let index):
 			if running(), let resume = context.resume, resume.previousClipIndex == index {
@@ -182,7 +201,7 @@ final class RecordingLifecycle {
 		case .awaitResumeAcknowledgement:
 			if running(), var resume = context.resume { resume.stage = .awaitingAcknowledgement; context.transport = .resuming(resume); saveCapture(); result.changed = true }
 		case .rejectResume:
-			if running(), context.resume != nil, !context.clip.hasSession { context.transport = .paused; saveCapture(); result.changed = true } else { reject() }
+			if running(), let resume = context.resume, !context.clip.hasSession { context.clipIndex = resume.previousClipIndex; context.transport = .paused; saveCapture(); result.changed = true } else { reject() }
 		case .fail:
 			if running() { context.transport = .paused; state = .terminalFailure(context, .detected); result.changed = true }
 		case .announceFailure:
@@ -249,14 +268,19 @@ final class RecordingLifecycle {
 		case .installSource(let id):
 			if !isCompleted { context.source = .active(id, context.source.generation &+ 1); saveCapture(); result.changed = true } else { reject() }
 		case .invalidateSource:
-			if let id = context.source.identity { context.source = .replacementRequired(id, context.source.generation); saveCapture(); result.changed = true }
+			if let id = context.source.identity {
+				if case .inactive = context.source { context.source = .inactiveReplacementRequired(id, context.source.generation) }
+				else if !context.source.needsReplacement { context.source = .replacementRequired(id, context.source.generation) }
+				saveCapture(); result.changed = true
+			}
 		case .sourceInactive(let id):
 			if running(), case .active(let current, let generation) = context.source, current == id { context.source = .inactive(id, generation &+ 1); saveCapture(); result.changed = true }
 		case .sourceActive(let id):
 			if running(), case .inactive(let current, let generation) = context.source, current == id { context.source = .active(id, generation); saveCapture(); result.changed = true }
 		case .sourceStopped(let id):
 			if running(), context.source.identity == id, !context.source.needsReplacement {
-				context.source = .replacementRequired(id, context.source.generation)
+				if case .inactive = context.source { context.source = .inactiveReplacementRequired(id, context.source.generation) }
+				else { context.source = .replacementRequired(id, context.source.generation) }
 				if context.paused || context.resume != nil { result.sourceStop = .pausedSourceUnavailable; saveCapture() }
 				else { result.sourceStop = .activeFailure; context.transport = .paused; state = .terminalFailure(context, .detected) }
 				result.changed = true

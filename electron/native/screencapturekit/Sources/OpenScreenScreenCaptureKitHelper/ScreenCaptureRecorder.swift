@@ -94,7 +94,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	private var isPaused: Bool { lifecycle.isPaused }
 	private var hasTerminalFailure: Bool { lifecycle.hasTerminalFailure }
 	private var terminationBoundary = RecordingTerminationBoundary()
-	private(set) var currentClipIndex = 0
+	var currentClipIndex: Int { lifecycle.capture.clipIndex }
 	private var currentClipPath: String?
 	private var clipStartTime: CMTime?
 	private var clipLastTime: CMTime?
@@ -588,7 +588,6 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 					discardCurrentWriterOnSampleQueue()
 					throw error
 				}
-				currentClipIndex = nextClipIndex
 				if let sourceSeed = seed {
 					try stateQueue.sync {
 						guard streamRecovery.isSourceUsable, streamRecovery.generation == resumeGeneration,
@@ -659,7 +658,6 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 				guard rejected else { return false }
 				discardCurrentWriterOnSampleQueue()
 				frameCache.invalidateCapturedFrame()
-				currentClipIndex = previousClipIndex
 				_ = stateQueue.sync { lifecycle.transition(.rejectResume) }
 				return true
 			}
@@ -724,27 +722,29 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		handleStreamStop(stream, error: error)
 	}
 
+	func handleSystemAudioStop(_ error: Error) {
+		let disposition = stateQueue.sync {
+			let outcome = lifecycle.transition(.systemAudioStopped)
+			if outcome.sourceStop == .activeFailure { terminationBoundary.recordFailure(at: CMClockGetTime(CMClockGetHostTimeClock())) }
+			return outcome.sourceStop
+		}
+		switch disposition {
+		case .ignored: return
+		case .pausedSourceUnavailable:
+			emit(["event": "warning", "code": "system-audio-unavailable", "message": "System audio stopped: \(error). Continue will retry."])
+		case .activeFailure:
+			endRecordingActivity()
+			unexpectedStopHandler(self, error)
+		}
+	}
+
 	func handleStreamStop(_ stream: AnyObject, error: Error) {
 		let audioFailure = stateQueue.sync { () -> Bool in
 			guard stream === systemAudioStream else { return false }
 			systemAudioStream = nil
 			return !isStopping
 		}
-		if audioFailure {
-			let paused = syncOnSampleQueue { stateQueue.sync { isPaused && pendingResume == nil } }
-			if paused {
-				emit(["event": "warning", "code": "system-audio-unavailable", "message": "System audio stopped: \(error). Continue will retry."])
-			} else {
-				stateQueue.sync {
-					terminationBoundary.recordFailure(at: CMClockGetTime(CMClockGetHostTimeClock()))
-					lifecycle.transition(.pause)
-					lifecycle.transition(.fail)
-				}
-				endRecordingActivity()
-				unexpectedStopHandler(self, error)
-			}
-			return
-		}
+		if audioFailure { handleSystemAudioStop(error); return }
 		let disposition = syncOnSampleQueue {
 			return stateQueue.sync { () -> RecordingStreamRecovery.StopDisposition in
 				let disposition = streamRecovery.stopped(stream)
@@ -942,7 +942,6 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		guard rejected else { return false }
 		discardCurrentWriterOnSampleQueue()
 		frameCache.invalidateCapturedFrame()
-		currentClipIndex = pending.previousClipIndex
 		_ = stateQueue.sync { lifecycle.transition(.rejectResume) }
 		endRecordingActivity()
 		emitObservedEvent(RecordingStreamRecovery.rejectedResumePayload(

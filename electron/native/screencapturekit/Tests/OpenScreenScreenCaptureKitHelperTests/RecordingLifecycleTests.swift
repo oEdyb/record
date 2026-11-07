@@ -64,6 +64,44 @@ final class RecordingLifecycleTests: XCTestCase {
 		XCTAssertEqual(rejected, ["completed:install-source"])
 	}
 
+	func testCompletedLifecycleRejectsEveryLateMutationButStillJoinsStop() {
+		var rejected: [String] = []
+		let lifecycle = RecordingLifecycle { _, event in rejected.append(event) }
+		let stop = lifecycle.transition(.stop)
+		lifecycle.transition(.stopped); stop.stop?.finish()
+		for event: RecordingLifecycle.Event in [.throttleSource(epoch(1)), .cancelReadiness, .endSourceChange, .pause, .fail, .invalidateSource] {
+			XCTAssertFalse(lifecycle.transition(event).accepted)
+		}
+		XCTAssertEqual(rejected, ["throttle-source", "cancel-readiness", "end-source-change", "pause", "failure", "invalidate-source"])
+		XCTAssertEqual(lifecycle.name, "completed")
+		XCTAssertTrue(lifecycle.transition(.stop).accepted)
+	}
+	func testInactiveSourceCannotBecomeResumableThroughStopOrInvalidation() {
+		for invalidate in [false, true] {
+			var rejected: [String] = []
+			let lifecycle = RecordingLifecycle { _, event in rejected.append(event) }
+			let recovery = RecordingStreamRecovery(lifecycle: lifecycle)
+			recovery.install(source); lifecycle.transition(.pause)
+			XCTAssertTrue(recovery.becameInactive(source))
+			if invalidate { recovery.invalidate() } else { XCTAssertEqual(recovery.stopped(source), .pausedSourceUnavailable) }
+			XCTAssertTrue(recovery.needsReplacement)
+			XCTAssertFalse(recovery.canAttemptResume)
+			XCTAssertFalse(recovery.becameActive(source))
+			XCTAssertFalse(lifecycle.transition(.beginResume(generation: recovery.generation, previousClipIndex: 0)).accepted)
+			XCTAssertEqual(rejected, ["begin-resume"])
+		}
+	}
+	func testFailureDuringStopKeepsSessionAndPublishesFailureOnlyOnce() {
+		let lifecycle = RecordingLifecycle(log: { _, _ in })
+		lifecycle.transition(.beginEpoch(epoch(100)))
+		let stop = lifecycle.transition(.stop)
+		XCTAssertTrue(lifecycle.transition(.announceFailure).changed)
+		XCTAssertTrue(lifecycle.hasTerminalFailure)
+		XCTAssertTrue(lifecycle.capture.clip.hasSession)
+		XCTAssertFalse(lifecycle.transition(.announceFailure).changed)
+		XCTAssertTrue(lifecycle.transition(.stop).stop === stop.stop)
+		lifecycle.transition(.stopped); stop.stop?.finish()
+	}
 	func testSourceGenerationAndStartupViewsShareOneAuthority() {
 		let lifecycle = RecordingLifecycle(log: { _, _ in })
 		let recovery = RecordingStreamRecovery(lifecycle: lifecycle)
