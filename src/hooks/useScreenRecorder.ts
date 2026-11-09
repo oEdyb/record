@@ -109,7 +109,7 @@ type UseScreenRecorderReturn = {
 	startRecordingFromRequest: () => void;
 	/** Starts recording with no countdown overlay. Used by the headless CLI runner. */
 	startRecordingImmediately: () => Promise<void>;
-	togglePaused: () => void;
+	togglePaused: (caller?: string) => void;
 	chooseRecordingSource: () => Promise<NativeLinuxSourceSelectionResult>;
 	selectRecordingSource: (
 		cursorMode?: CursorCaptureMode,
@@ -1076,10 +1076,47 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	const finalizeNativeWindowsRecordingRef = useRef(finalizeNativeWindowsRecording);
 	const finalizeNativeMacRecordingRef = useRef(finalizeNativeMacRecording);
 	const saveNativeMacRecordingRef = useRef(saveNativeMacRecording);
-	const togglePausedRef = useRef<() => void>(() => undefined);
+	const togglePausedRef = useRef<(caller?: string) => void>(() => undefined);
 	finalizeNativeWindowsRecordingRef.current = finalizeNativeWindowsRecording;
 	finalizeNativeMacRecordingRef.current = finalizeNativeMacRecording;
 	saveNativeMacRecordingRef.current = saveNativeMacRecording;
+
+	const interruptionHandlerRef = useRef<(reason: NativeMacRecordingInterruption) => void>(
+		() => undefined,
+	);
+	interruptionHandlerRef.current = (reason) => {
+		if (reason === "microphone-defaulted") {
+			toast.warning(
+				"The selected microphone could not be found. Recording the system default microphone.",
+			);
+			return;
+		}
+		const active = nativeMacRecording.current;
+		if (!active || active.finalizing) return;
+		if (reason === "source-active") {
+			if (active.paused) toast.info("The recorded window is back. Continue when ready.");
+			return;
+		}
+		if (lifecycle.transport() !== null || lifecycle.getSnapshot().kind === "configuring-resume") {
+			pendingNativeMacInterruption.current = reason;
+			return;
+		}
+		if (window.electronAPI.getPlatform() === "linux" && reason === "source-inactive") {
+			if (active.paused) {
+				toast.warning("The recording source disconnected. Choose a source before continuing.");
+				return;
+			}
+			toast.error("The recording source disconnected. Saving captured footage.", {
+				duration: Infinity,
+			});
+			if (active.rendererStop)
+				void window.electronAPI.reportNativeRecordingInterruption?.(active.rendererStop, reason);
+			void finalizeNativeMacRecordingRef.current(false);
+			return;
+		}
+		toast.warning(NATIVE_MAC_INTERRUPTION_MESSAGES[reason]);
+		if (!active.paused) togglePausedRef.current(`interruption:${reason}`);
+	};
 
 	useEffect(() => {
 		let cleanupTray: (() => void) | undefined;
@@ -1116,31 +1153,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			});
 		}
 		if (window.electronAPI?.onNativeMacRecordingInterrupted) {
-			cleanupNativeMacInterruption = window.electronAPI.onNativeMacRecordingInterrupted(
-				(reason) => {
-					if (reason === "microphone-defaulted") {
-						toast.warning(
-							"The selected microphone could not be found. Recording the system default microphone.",
-						);
-						return;
-					}
-					const activeRecording = nativeMacRecording.current;
-					if (!activeRecording || activeRecording.finalizing) return;
-					if (reason === "source-active") {
-						if (activeRecording.paused)
-							toast.info("The recorded window is back. Continue when ready.");
-						return;
-					}
-					if (
-						lifecycle.transport() !== null ||
-						lifecycle.getSnapshot().kind === "configuring-resume"
-					) {
-						pendingNativeMacInterruption.current = reason;
-						return;
-					}
-					toast.warning(NATIVE_MAC_INTERRUPTION_MESSAGES[reason]);
-					if (!activeRecording.paused) togglePausedRef.current();
-				},
+			cleanupNativeMacInterruption = window.electronAPI.onNativeMacRecordingInterrupted((reason) =>
+				interruptionHandlerRef.current(reason),
 			);
 		}
 		if (window.electronAPI?.onNativeMacRecordingStorageLow) {
@@ -2171,7 +2185,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		[lifecycle],
 	);
 
-	const togglePaused = () => {
+	const togglePaused = (caller = "hud-controls") => {
 		if (lifecycle.selecting) return;
 		const activeNativeWindowsRecording = nativeWindowsRecording.current;
 		if (activeNativeWindowsRecording && !activeNativeWindowsRecording.finalizing) {
@@ -2264,7 +2278,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 							activeNativeMacRecording.recordingId,
 						);
 						lifecycle.transition({ type: "resume-dispatched" });
-						const result = await window.electronAPI.resumeNativeMacRecording(request);
+						const result = await window.electronAPI.resumeNativeMacRecording(request, caller);
 						if (!result.success) {
 							if (activeNativeMacRecording.finalizing) return;
 							if (result.paused === true) {
@@ -2331,7 +2345,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 							webcamOffsetMs: activeNativeMacRecording.webcamOffsetMs,
 						};
 					}
-					const result = await window.electronAPI.pauseNativeMacRecording();
+					const result = await window.electronAPI.pauseNativeMacRecording(caller);
 					if (result.success || result.paused === true)
 						lifecycle.transition({ type: "paused", takeId: activeNativeMacRecording.recordingId });
 					if (activeNativeMacRecording.finalizing) return;
@@ -2389,14 +2403,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
 					const interruption = pendingNativeMacInterruption.current;
 					pendingNativeMacInterruption.current = null;
-					if (
-						interruption &&
-						nativeMacRecording.current &&
-						!nativeMacRecording.current.finalizing
-					) {
-						toast.warning(NATIVE_MAC_INTERRUPTION_MESSAGES[interruption]);
-						if (!nativeMacRecording.current.paused) togglePausedRef.current();
-					}
+					if (interruption) interruptionHandlerRef.current(interruption);
 				}
 			})();
 			return;

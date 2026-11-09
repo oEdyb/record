@@ -888,6 +888,7 @@ describe("useScreenRecorder native Linux stop failure", () => {
 				platform: "linux",
 				webcam: expect.objectContaining({ enabled: false }),
 			}),
+			"hud-controls",
 		);
 		expect(prepare).toHaveBeenCalledOnce();
 	});
@@ -1787,6 +1788,7 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 				},
 				cursor: { mode: "system" },
 			}),
+			"hud-controls",
 		);
 		expect(window.electronAPI.stopNativeMacRecording).not.toHaveBeenCalled();
 		expect(view.result.current.paused).toBe(false);
@@ -2178,6 +2180,133 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 		expect(view.result.current.recording).toBe(true);
 	});
 
+	it("saves and reports Linux source loss without pausing or resuming", async () => {
+		let listener: ((reason: string) => void) | undefined;
+		stubNativeMac({
+			onNativeMacRecordingInterrupted: vi.fn((callback) => {
+				listener = callback;
+				return vi.fn();
+			}),
+		});
+		const view = renderHook(() => useScreenRecorder());
+		await startNativeRecording(view);
+		vi.mocked(window.electronAPI.getPlatform).mockReturnValue("linux");
+		act(() => listener?.("source-inactive"));
+		await settle();
+		expect(window.electronAPI.pauseNativeMacRecording).not.toHaveBeenCalled();
+		expect(window.electronAPI.resumeNativeMacRecording).not.toHaveBeenCalled();
+		expect(window.electronAPI.stopNativeMacRecording).toHaveBeenCalledOnce();
+		expect(toast.error).toHaveBeenCalledWith(
+			expect.stringContaining("The recording source disconnected."),
+			{ duration: Infinity },
+		);
+	});
+
+	it.each([
+		false,
+		true,
+	])("privacy covers preserve actual user-paused=%s renderer transport", async (paused) => {
+		const { LinuxRecordingHud } = await import("../../electron/recording/linuxRecordingHud");
+		stubNativeMac();
+		const view = renderHook(() => useScreenRecorder());
+		await startNativeRecording(view);
+		if (paused) {
+			await act(async () => view.result.current.togglePaused());
+			await settle();
+		}
+		const pauseCalls = vi.mocked(window.electronAPI.pauseNativeMacRecording).mock.calls.length;
+		const resumeCalls = vi.mocked(window.electronAPI.resumeNativeMacRecording).mock.calls.length;
+		const windowFixture = {
+			isDestroyed: () => false,
+			hide: vi.fn(),
+			show: vi.fn(),
+			focus: vi.fn(),
+			webContents: { send: vi.fn(() => view.result.current.togglePaused()) },
+		};
+		const isolation = { begin: async () => true, end: vi.fn(), isSafe: vi.fn(() => false) };
+		const notice = vi.fn();
+		const hud = new LinuxRecordingHud(
+			"linux",
+			() => windowFixture,
+			() => view.result.current.recording && !view.result.current.paused,
+			() => true,
+			async () => undefined,
+			undefined,
+			undefined,
+			isolation,
+			() => true,
+			notice,
+		);
+		for (let cycle = 0; cycle < 6; cycle++) {
+			isolation.isSafe.mockReturnValue(false);
+			act(() => hud.revoke());
+			await settle(60000);
+			expect(view.result.current.paused).toBe(paused);
+			isolation.isSafe.mockReturnValue(true);
+			act(() => hud.restorePrivacy());
+			await settle();
+		}
+		expect(window.electronAPI.pauseNativeMacRecording).toHaveBeenCalledTimes(pauseCalls);
+		expect(window.electronAPI.resumeNativeMacRecording).toHaveBeenCalledTimes(resumeCalls);
+		expect(window.electronAPI.stopNativeMacRecording).not.toHaveBeenCalled();
+		expect(windowFixture.hide).toHaveBeenCalledTimes(6);
+		expect(windowFixture.show).toHaveBeenCalled();
+		expect(notice).not.toHaveBeenCalled();
+		hud.cancelPending();
+	});
+
+	it("keeps a Linux user pause when its source disappears and labels automatic pauses", async () => {
+		let listener: ((reason: string) => void) | undefined;
+		stubNativeMac({
+			onNativeMacRecordingInterrupted: vi.fn((callback) => {
+				listener = callback;
+				return vi.fn();
+			}),
+		});
+		const view = renderHook(() => useScreenRecorder());
+		await startNativeRecording(view);
+		vi.mocked(window.electronAPI.getPlatform).mockReturnValue("linux");
+		await act(async () => view.result.current.togglePaused());
+		await settle();
+		act(() => listener?.("source-inactive"));
+		await settle();
+		expect(view.result.current.paused).toBe(true);
+		expect(window.electronAPI.stopNativeMacRecording).not.toHaveBeenCalled();
+		expect(window.electronAPI.resumeNativeMacRecording).not.toHaveBeenCalled();
+		expect(window.electronAPI.pauseNativeMacRecording).toHaveBeenCalledOnce();
+	});
+
+	it("defers Linux source death until an in-flight Continue settles", async () => {
+		let listener: ((reason: string) => void) | undefined;
+		let finish: ((value: { success: true; clipIndex: number }) => void) | undefined;
+		stubNativeMac({
+			resumeNativeMacRecording: vi.fn(
+				() =>
+					new Promise((resolve) => {
+						finish = resolve;
+					}),
+			),
+			onNativeMacRecordingInterrupted: vi.fn((callback) => {
+				listener = callback;
+				return vi.fn();
+			}),
+		});
+		const view = renderHook(() => useScreenRecorder());
+		await startNativeRecording(view);
+		await act(async () => view.result.current.togglePaused());
+		await settle();
+		act(() => view.result.current.togglePaused());
+		await settle();
+		vi.mocked(window.electronAPI.getPlatform).mockReturnValue("linux");
+		act(() => listener?.("source-inactive"));
+		await settle();
+		expect(window.electronAPI.stopNativeMacRecording).not.toHaveBeenCalled();
+		finish?.({ success: true, clipIndex: 1 });
+		await settle();
+		expect(window.electronAPI.stopNativeMacRecording).toHaveBeenCalledOnce();
+		expect(window.electronAPI.pauseNativeMacRecording).toHaveBeenCalledOnce();
+	});
+
 	it("pauses a live take when the screen locks and ignores a source that comes back", async () => {
 		let interruptionListener: ((reason: string) => void) | undefined;
 		stubNativeMac({
@@ -2198,6 +2327,9 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 		expect(window.electronAPI.pauseNativeMacRecording).toHaveBeenCalledOnce();
 		expect(view.result.current.paused).toBe(true);
 		expect(toast.warning).toHaveBeenCalledWith("The screen locked, so recording paused.");
+		expect(window.electronAPI.pauseNativeMacRecording).toHaveBeenLastCalledWith(
+			"interruption:screen-locked",
+		);
 
 		act(() => interruptionListener?.("system-sleep"));
 		await settle();
@@ -2238,6 +2370,9 @@ describe("useScreenRecorder native macOS clip recovery", () => {
 		expect(window.electronAPI.pauseNativeMacRecording).toHaveBeenCalledTimes(2);
 		expect(view.result.current.paused).toBe(true);
 		expect(toast.warning).toHaveBeenCalledWith("The screen locked, so recording paused.");
+		expect(window.electronAPI.pauseNativeMacRecording).toHaveBeenLastCalledWith(
+			"interruption:screen-locked",
+		);
 	});
 
 	it("tells the user how many minutes of disk space the take has left", async () => {

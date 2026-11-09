@@ -135,6 +135,7 @@ struct osc_pw_api {
     struct pw_core *(*context_connect_fd)(struct pw_context *context, int fd,
                                           struct pw_properties *props, size_t user_data_size);
     int (*core_disconnect)(struct pw_core *core);
+    void (*proxy_destroy)(struct pw_proxy *proxy);
     struct pw_properties *(*properties_new)(const char *key, ...);
     struct pw_stream *(*stream_new)(struct pw_core *core, const char *name,
                                     struct pw_properties *props);
@@ -160,6 +161,9 @@ struct osc_pw_session {
     struct pw_context *context;
     struct pw_core *core;
     struct pw_stream *stream;
+    struct pw_registry *registry;
+    struct spa_hook registry_listener;
+    uint32_t source_node_id;
     struct spa_hook stream_listener;
     struct osc_pw_callbacks callbacks;
     struct spa_video_info_raw format;
@@ -246,6 +250,7 @@ int osc_pw_load(char *err, size_t err_len)
     OSC_LOAD(context_destroy, "pw_context_destroy");
     OSC_LOAD(context_connect_fd, "pw_context_connect_fd");
     OSC_LOAD(core_disconnect, "pw_core_disconnect");
+    OSC_LOAD(proxy_destroy, "pw_proxy_destroy");
     OSC_LOAD(properties_new, "pw_properties_new");
     OSC_LOAD(stream_new, "pw_stream_new");
     OSC_LOAD(stream_destroy, "pw_stream_destroy");
@@ -1294,6 +1299,19 @@ static const struct pw_stream_events osc_stream_events = {
     .process = osc_on_process,
 };
 
+static void osc_source_removed(void *userdata, uint32_t id)
+{
+    struct osc_pw_session *session = userdata;
+    if (id == session->source_node_id && session->callbacks.on_state != NULL) {
+        session->callbacks.on_state(session->callbacks.user, "error", "The capture source node disappeared");
+    }
+}
+
+static const struct pw_registry_events osc_source_events = {
+    PW_VERSION_REGISTRY_EVENTS,
+    .global_remove = osc_source_removed,
+};
+
 struct osc_pw_session *osc_pw_start(int fd, uint32_t node_id, int want_video,
                                     const struct osc_pw_callbacks *callbacks, char *err,
                                     size_t err_len)
@@ -1353,6 +1371,14 @@ struct osc_pw_session *osc_pw_start(int fd, uint32_t node_id, int want_video,
         osc_set_error(err, err_len, "pw_context_connect_fd failed: %s", strerror(errno));
         goto fail;
     }
+
+    session->source_node_id = node_id;
+    session->registry = pw_core_get_registry(session->core, PW_VERSION_REGISTRY, 0);
+    if (session->registry == NULL) {
+        osc_set_error(err, err_len, "pw_core_get_registry failed");
+        goto fail;
+    }
+    pw_registry_add_listener(session->registry, &session->registry_listener, &osc_source_events, session);
 
     session->stream = api.stream_new(session->core, "openscreen-cursor",
                                      api.properties_new(PW_KEY_MEDIA_TYPE, "Video",
@@ -1465,6 +1491,10 @@ fail:
     if (session->stream != NULL) {
         api.stream_destroy(session->stream);
     }
+    if (session->registry != NULL) {
+        spa_hook_remove(&session->registry_listener);
+        api.proxy_destroy((struct pw_proxy *)session->registry);
+    }
     if (session->core != NULL) {
         api.core_disconnect(session->core);
     }
@@ -1483,6 +1513,7 @@ static int osc_release_egl_thread(struct spa_loop *loop, bool async, uint32_t se
     struct osc_pw_session *session = userdata;
     char error[256];
     (void)loop; (void)async; (void)seq; (void)data; (void)size;
+    session->callbacks.on_state = NULL;
     if (session->stream != NULL) api.stream_disconnect(session->stream);
     int result = osc_dmabuf_egl_release_thread(session->egl, error, sizeof(error));
     if (result != 0) fprintf(stderr, "[osc-dmabuf] %s\n", error);
@@ -1508,6 +1539,10 @@ void osc_pw_stop(struct osc_pw_session *session)
      * of these itself. This is the backstop for anything it did not reach, and
      * it runs once the loop is joined so nothing can be mapping concurrently. */
     osc_unmap_all_dmabufs(session);
+    if (session->registry != NULL) {
+        spa_hook_remove(&session->registry_listener);
+        api.proxy_destroy((struct pw_proxy *)session->registry);
+    }
     if (session->core != NULL) {
         api.core_disconnect(session->core);
     }

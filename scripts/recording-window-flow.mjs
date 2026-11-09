@@ -6,10 +6,12 @@ import { fileURLToPath } from "node:url";
 import { _electron } from "@playwright/test";
 import { launchRecordingTestApp, recordingTestTarget } from "./recording-test-app.mjs";
 import { clipRecovery } from "./recording-test-clip-recovery.mjs";
+import { recordingConcurrentSharing } from "./recording-test-concurrent-sharing.mjs";
 import { exportPrivateTake } from "./recording-test-export.mjs";
 import { acquireRecordingTestLock } from "./recording-test-lock.mjs";
 import { selectedMicrophoneLoss } from "./recording-test-microphone-loss.mjs";
 import { recordingOverlap } from "./recording-test-overlap.mjs";
+import { recordingSourceLoss } from "./recording-test-source-loss.mjs";
 
 function verifyClip(clip, { camera = true, minimumDuration = 0.1 } = {}) {
 	for (const key of [
@@ -60,6 +62,8 @@ const fault = faultArgument?.slice(8);
 assert(
 	!fault ||
 		[
+			"source-loss",
+			"concurrent-sharing",
 			"clip-recovery",
 			"hung-stop",
 			"pause-stop",
@@ -136,6 +140,9 @@ if (!process.argv.includes("--worker")) {
 			let workerActive = true;
 			child.stdout.on("data", (data) => {
 				process.stdout.write(data);
+				if (data.toString().includes("ACK_PRIVATE_ALERT")) {
+					execFileSync("agent-lab", ["input", lab, "key", "28"]);
+				}
 				if (data.toString().includes("SAVE_PRIVATE_EXPORT")) {
 					let attempts = 0;
 					const choose = () => {
@@ -171,7 +178,11 @@ if (!process.argv.includes("--worker")) {
 					};
 					setTimeout(choose, 600);
 				}
-				if (data.toString().includes("SELECT_PRIVATE_SOURCE")) {
+				if (
+					data.toString().includes("SELECT_PRIVATE_SOURCE") ||
+					data.toString().includes("SELECT_PRIVATE_MONITOR")
+				) {
+					const monitor = data.toString().includes("SELECT_PRIVATE_MONITOR");
 					let attempts = 0;
 					const choose = () => {
 						if (!workerActive) return;
@@ -194,6 +205,18 @@ if (!process.argv.includes("--worker")) {
 							return;
 						}
 						const { x, y, width } = dialog.geometry;
+						if (monitor) {
+							execFileSync("agent-lab", [
+								"input",
+								lab,
+								"move",
+								String(x + width / 2),
+								String(y + 250),
+							]);
+							execFileSync("agent-lab", ["input", lab, "click"]);
+							return;
+						}
+
 						execFileSync("agent-lab", [
 							"input",
 							lab,
@@ -430,6 +453,14 @@ w.loadURL('data:text/html,'+encodeURIComponent('<title>Private recording fixture
 					await delay(200);
 				}
 				assert.equal((await snapshot())?.phase, "recording", "Writer never entered recording");
+				if (fault === "source-loss") {
+					await recordingSourceLoss({ studio, snapshot, run, verifyClip, app });
+					break recordingControls;
+				}
+				if (fault === "concurrent-sharing") {
+					await recordingConcurrentSharing({ studio, snapshot, run, verifyClip });
+					break recordingControls;
+				}
 				if (fault === "clip-recovery") await delay(2500);
 
 				await studio.getByTestId("hud-compact-pause-button").click();
@@ -944,6 +975,6 @@ w.loadURL('data:text/html,'+encodeURIComponent('<title>Private recording fixture
 		if (!completed)
 			await app.abort().catch((error) => console.log("Private app exited:", error.message));
 		await app.close();
-		await fixture.close();
+		await fixture.close().catch((error) => console.log("Private fixture closed:", error.message));
 	}
 }

@@ -84,7 +84,7 @@ describe("recording HUD ownership overlaps", () => {
 		expect(window.show).not.toHaveBeenCalled();
 		expect(record).toHaveBeenCalledOnce();
 		expect(recovered).toBe(true);
-		expect(window.webContents.send).toHaveBeenCalledWith("hud-toggle-recording-pause");
+		expect(window.webContents.send).not.toHaveBeenCalled();
 	});
 
 	it("keeps deliberate dismissal concealed after an outstanding retained proof", async () => {
@@ -98,7 +98,7 @@ describe("recording HUD ownership overlaps", () => {
 		const recovered = hud.requestControls();
 		console.log("dismiss-during-proof", JSON.stringify({ calls, recovered }));
 		expect(recovered).toBe(true);
-		expect(window.webContents.send).toHaveBeenCalledExactlyOnceWith("hud-toggle-recording-pause");
+		expect(window.webContents.send).not.toHaveBeenCalled();
 	});
 
 	it("keeps explicit concealment after an outstanding retained proof", async () => {
@@ -132,7 +132,7 @@ describe("recording HUD ownership overlaps", () => {
 		console.log("recover-cancelled-writer", JSON.stringify({ calls, recovered }));
 		expect(window.show).not.toHaveBeenCalled();
 		expect(recovered).toBe(true);
-		expect(window.webContents.send).toHaveBeenCalledWith("hud-toggle-recording-pause");
+		expect(window.webContents.send).not.toHaveBeenCalled();
 	});
 
 	it("retains a revocation received while a cancelled admitted writer settles", async () => {
@@ -154,7 +154,7 @@ describe("recording HUD ownership overlaps", () => {
 		await vi.advanceTimersByTimeAsync(500);
 		console.log("revoke-cancelled-writer", JSON.stringify({ calls }));
 		expect(window.show).not.toHaveBeenCalled();
-		expect(window.webContents.send).toHaveBeenCalledWith("hud-toggle-recording-pause");
+		expect(window.webContents.send).not.toHaveBeenCalled();
 	});
 
 	it("does not let the old proof finish or restore over its replacement", async () => {

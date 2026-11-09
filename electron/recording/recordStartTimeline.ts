@@ -45,6 +45,7 @@ export function appendRecordStartTiming(
 		success: boolean;
 		steps: RecordStartStep[];
 		action?: string;
+		caller?: string;
 		error?: string;
 	},
 ): Promise<void> {

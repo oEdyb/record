@@ -492,7 +492,7 @@ let isRecording = false;
 
 function toggleRecordingPauseFromShortcut() {
 	if (!workspace.mainWindow || workspace.mainWindow.isDestroyed()) return;
-	workspace.mainWindow.webContents.send("hud-toggle-recording-pause");
+	workspace.mainWindow.webContents.send("hud-toggle-recording-pause", "keyboard-shortcut");
 }
 
 const globalShortcutHandlers = {

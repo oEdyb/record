@@ -266,7 +266,11 @@ interface Window {
 			owner: import("../src/lib/nativeMacRecording").NativeRecordingAppStopRequest,
 			cursorMode?: import("../src/lib/recordingSession").CursorCaptureMode,
 		) => Promise<import("../src/lib/nativeLinuxRecording").NativeLinuxSourceSelectionResult>;
-		pauseNativeMacRecording: () => Promise<{
+		reportNativeRecordingInterruption: (
+			owner: import("../src/lib/nativeMacRecording").NativeRecordingAppStopRequest,
+			reason: "source-inactive",
+		) => Promise<void>;
+		pauseNativeMacRecording: (caller?: string) => Promise<{
 			success: boolean;
 			clip?: import("../src/lib/recordingSession").RecordingSessionClip;
 			paused?: boolean;
@@ -274,6 +278,7 @@ interface Window {
 		}>;
 		resumeNativeMacRecording: (
 			request?: import("../src/lib/nativeMacRecording").NativeMacRecordingRequest,
+			caller?: string,
 		) => Promise<{
 			success: boolean;
 			clipIndex?: number;
@@ -388,7 +393,7 @@ interface Window {
 				| import("../src/lib/nativeLinuxRecording").NativeLinuxRecordingRequest
 				| import("../src/lib/nativeMacRecording").NativeMacRecordingRequest,
 		) => Promise<import("../src/lib/nativeLinuxRecording").NativeLinuxRecordingStartResult>;
-		pauseNativeLinuxRecording: () => Promise<{
+		pauseNativeLinuxRecording: (caller?: string) => Promise<{
 			success: boolean;
 			clip?: import("../src/lib/recordingSession").RecordingSessionClip;
 			paused?: boolean;
@@ -396,6 +401,7 @@ interface Window {
 		}>;
 		resumeNativeLinuxRecording: (
 			request?: import("../src/lib/nativeMacRecording").NativeMacRecordingRequest,
+			caller?: string,
 		) => Promise<{
 			success: boolean;
 			clipIndex?: number;
@@ -597,7 +603,7 @@ interface Window {
 		}) => void;
 		setStudioRecordReady?: (ready: boolean) => void;
 		onHudStartRecording?: (callback: (token?: number) => void) => () => void;
-		onHudToggleRecordingPause: (callback: () => void) => () => void;
+		onHudToggleRecordingPause: (callback: (caller: string) => void) => () => void;
 		writeClipboardText: (text: string) => Promise<void>;
 		hudOverlayHide: () => void;
 		hudOverlayClose: () => void;

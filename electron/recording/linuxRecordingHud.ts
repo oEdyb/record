@@ -6,8 +6,8 @@ type HudWindow = {
 	isVisible?(): boolean;
 	hide(): void;
 	show(): void;
+	showInactive?(): void;
 	focus(): void;
-	webContents: { send(channel: string): void };
 };
 
 export class LinuxRecordingHud {
@@ -21,8 +21,14 @@ export class LinuxRecordingHud {
 		private readonly waitForUnmap: () => Promise<void>,
 		private readonly afterShow: () => void = () => undefined,
 		private readonly setPreviewHidden: (hidden: boolean) => void | Promise<void> = () => undefined,
-		private readonly windowIsolation?: { begin(): Promise<boolean>; end(): void },
+		private readonly windowIsolation?: {
+			begin(): Promise<boolean>;
+			end(): void;
+			isSafe?(): boolean;
+			retry?(): Promise<boolean>;
+		},
 		private readonly shouldShowControls: () => boolean = () => true,
+		private readonly onHiddenControlsRequested: () => void = () => undefined,
 	) {}
 
 	async capture<T extends { success: boolean }>(operation: () => Promise<T>): Promise<T> {
@@ -51,7 +57,7 @@ export class LinuxRecordingHud {
 		} finally {
 			if (this.lifecycle.transition({ type: "finish", owner })) {
 				if (shouldHide && !this.isCapturing()) this.showControls();
-				else if (this.lifecycle.recovering) this.requestControls();
+				else if (this.lifecycle.recovering) this.requestControls(false);
 			}
 		}
 	}
@@ -82,11 +88,16 @@ export class LinuxRecordingHud {
 			return;
 		}
 		this.conceal();
-		this.requestControls();
+		this.requestControls(false);
 	}
 
-	requestControls(): boolean {
+	restorePrivacy(): void {
+		if (this.lifecycle.recovering && this.windowIsolation?.isSafe?.()) this.showControls(true);
+	}
+
+	requestControls(notify = true): boolean {
 		if (this.platform !== "linux" || !this.lifecycle.transition({ type: "recover" })) return false;
+		if (notify && this.isCapturing()) this.onHiddenControlsRequested();
 		if (this.lifecycle.preparing) {
 			this.scheduleRetry();
 			return true;
@@ -95,11 +106,19 @@ export class LinuxRecordingHud {
 			this.showControls();
 			return true;
 		}
-		if (!this.lifecycle.pauseSent && this.lifecycle.transition({ type: "pause-sent" })) {
-			const window = this.getWindow();
-			if (window && !window.isDestroyed()) window.webContents.send("hud-toggle-recording-pause");
-		}
-		this.scheduleRetry();
+		if (this.windowIsolation?.isSafe?.()) this.restorePrivacy();
+		else if (this.windowIsolation?.retry) {
+			void this.windowIsolation
+				.retry()
+				.then(() => {
+					if (this.windowIsolation?.isSafe?.()) this.restorePrivacy();
+					else this.scheduleRetry();
+				})
+				.catch((error: unknown) => {
+					console.warn("[linux-hud] isolation retry failed:", error);
+					this.scheduleRetry();
+				});
+		} else this.scheduleRetry();
 		return true;
 	}
 
@@ -112,21 +131,27 @@ export class LinuxRecordingHud {
 	private scheduleRetry(): void {
 		if (this.lifecycle.retry || !this.lifecycle.recovering) return;
 		const timer = setTimeout(() => {
-			if (this.lifecycle.transition({ type: "tick", timer })) this.requestControls();
+			if (this.lifecycle.transition({ type: "tick", timer })) this.requestControls(false);
 		}, 500);
 		if (!this.lifecycle.transition({ type: "schedule", timer })) clearTimeout(timer);
 		timer.unref?.();
 	}
 
-	private showControls(): void {
-		if (!this.lifecycle.transition({ type: "show", capturing: this.isCapturing() })) return;
-		this.windowIsolation?.end();
-		void this.setPreviewHidden(false);
+	private showControls(isolated = false): void {
+		if (!this.lifecycle.transition({ type: "show", capturing: this.isCapturing(), isolated }))
+			return;
+		if (!isolated) {
+			this.windowIsolation?.end();
+			void this.setPreviewHidden(false);
+		}
 		if (!this.shouldShowControls()) return;
 		const window = this.getWindow();
 		if (!window || window.isDestroyed()) return;
-		window.show();
-		window.focus();
-		this.afterShow();
+		if (isolated && window.showInactive) window.showInactive();
+		else window.show();
+		if (!isolated) {
+			window.focus();
+			this.afterShow();
+		}
 	}
 }

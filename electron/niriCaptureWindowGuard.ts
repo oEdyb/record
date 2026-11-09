@@ -1,7 +1,6 @@
 import { execFile } from "node:child_process";
 import { createConnection } from "node:net";
 import {
-	captureWindowVerdict,
 	readCaptureWindowSnapshot,
 	updateCaptureWindowSnapshot,
 	windowOutsideCapture,
@@ -92,60 +91,148 @@ function watch(changed: (event: unknown) => void, failed: () => void): Watch {
 	};
 }
 
-export class NiriCaptureWindowGuard {
-	private generation = 0;
-	private admitted = false;
-	private revoked = false;
-	private snapshot: ReturnType<typeof readCaptureWindowSnapshot> = null;
-	private monitor: Watch | null = null;
+type CaptureSnapshot = NonNullable<ReturnType<typeof readCaptureWindowSnapshot>>;
+type GuardState =
+	| { kind: "idle"; generation: number }
+	| {
+			kind: "starting" | "safe" | "restoring" | "covered" | "failed";
+			generation: number;
+			snapshot: CaptureSnapshot | null;
+			lastWindow: CaptureSnapshot["windows"][number] | null;
+			monitor: Watch | null;
+	  };
+type GuardEvent =
+	| { type: "end" }
+	| {
+			type: "start";
+			snapshot: CaptureSnapshot;
+			fallback?: CaptureSnapshot["windows"][number] | null;
+	  }
+	| { type: "watch"; generation: number; monitor: Watch }
+	| { type: "update" | "ready"; generation: number; snapshot: CaptureSnapshot | null }
+	| { type: "fail"; generation: number };
 
+export class NiriCaptureWindowGuard {
+	private state: GuardState = { kind: "idle", generation: 0 };
 	constructor(
 		private readonly windowTitle: "Klippt" | "Klippt Camera" | "Klippt Studio",
 		private readonly onUnsafe: () => void,
 		private readonly dependencies: Dependencies = { query, watch },
 		private readonly pid = process.pid,
+		private readonly onSafe: () => void = () => undefined,
 	) {}
 
-	async begin(pipeWireNodeId: number | undefined): Promise<boolean> {
-		this.end();
-		if (!process.env.NIRI_SOCKET) return false;
-		if (pipeWireNodeId === undefined) {
-			console.info(`[capture-linux] "${this.windowTitle}" hides: no screen stream id yet`);
-			return false;
+	get recoveringVisibility(): boolean {
+		return this.state.kind === "covered";
+	}
+
+	async retry(): Promise<boolean> {
+		const state = this.state;
+		if (state.kind !== "failed") return this.isSafe;
+		return this.begin(state.snapshot?.pipeWireNodeId, state.lastWindow);
+	}
+
+	get isSafe(): boolean {
+		return this.state.kind === "safe" || this.state.kind === "restoring";
+	}
+
+	private transition(event: GuardEvent): void {
+		const state = this.state;
+		if (event.type === "end") {
+			this.state = { kind: "idle", generation: state.generation + 1 };
+			if (state.kind !== "idle") state.monitor?.close();
+			return;
 		}
-		const generation = this.generation;
-		this.snapshot = {
-			pid: this.pid,
-			pipeWireNodeId,
-			windowTitle: this.windowTitle,
-			casts: [],
-			windows: [],
-			workspaces: [],
-			outputs: {},
-		};
+		if (event.type === "start") {
+			this.state = {
+				kind: "starting",
+				generation: state.generation,
+				snapshot: event.snapshot,
+				lastWindow: event.fallback ?? null,
+				monitor: null,
+			};
+			return;
+		}
+		if (state.kind === "idle" || state.generation !== event.generation || state.kind === "failed") {
+			if (event.type === "watch") event.monitor.close();
+			return;
+		}
+		if (event.type === "watch") {
+			this.state = { ...state, monitor: event.monitor };
+			return;
+		}
+		if (event.type === "fail" || !event.snapshot) {
+			this.state = { ...state, kind: "failed", monitor: null };
+			state.monitor?.close();
+			if (state.kind === "safe" || state.kind === "restoring") this.onUnsafe();
+			return;
+		}
+		const snapshot = event.snapshot;
+		const ownWindow = snapshot.windows.find(
+			(window) =>
+				window.pid === this.pid &&
+				window.title === this.windowTitle &&
+				window.app_id === "co.dyberg.klippt" &&
+				window.is_floating,
+		);
+		const lastWindow = ownWindow ?? state.lastWindow;
+		if (state.kind === "starting" && event.type !== "ready") {
+			this.state = { ...state, snapshot, lastWindow };
+			return;
+		}
+		const footprint =
+			!ownWindow && state.kind !== "safe" && lastWindow
+				? { ...snapshot, windows: [...snapshot.windows, lastWindow] }
+				: snapshot;
+		const kind = windowOutsideCapture(footprint) ? (ownWindow ? "safe" : "restoring") : "covered";
+		this.state = { ...state, kind, snapshot, lastWindow };
+		if ((state.kind === "safe" || state.kind === "restoring") && kind === "covered")
+			this.onUnsafe();
+		if (state.kind === "covered" && kind !== "covered") this.onSafe();
+	}
+
+	async begin(
+		pipeWireNodeId: number | undefined,
+		fallback: CaptureSnapshot["windows"][number] | null = null,
+	): Promise<boolean> {
+		this.end();
+		if (!process.env.NIRI_SOCKET || pipeWireNodeId === undefined) return false;
+		this.transition({
+			type: "start",
+			fallback,
+			snapshot: {
+				pid: this.pid,
+				pipeWireNodeId,
+				windowTitle: this.windowTitle,
+				casts: [],
+				windows: [],
+				workspaces: [],
+				outputs: {},
+			},
+		});
+		const generation = this.state.generation;
 		const initial = new Set<string>();
 		let complete: () => void = () => undefined;
 		const initialized = new Promise<void>((resolve) => {
 			complete = resolve;
 		});
 		const deadline = setTimeout(() => {
-			this.invalidateGeneration(generation);
+			this.transition({ type: "fail", generation });
 			complete();
 		}, 1000);
 		try {
-			this.monitor = this.dependencies.watch(
+			const monitor = this.dependencies.watch(
 				(event) => {
-					if (generation !== this.generation || this.revoked) return;
-					if (this.initialConfig(event, initial)) {
-						initial.add("ConfigLoaded");
-					} else {
-						this.snapshot = updateCaptureWindowSnapshot(this.snapshot, event);
-						if (!this.snapshot || (this.admitted && !windowOutsideCapture(this.snapshot))) {
-							this.invalidate();
-							complete();
-							return;
-						}
-					}
+					const state = this.state;
+					if (state.kind === "idle" || state.kind === "failed" || state.generation !== generation)
+						return;
+					if (this.initialConfig(event, initial)) initial.add("ConfigLoaded");
+					else
+						this.transition({
+							type: "update",
+							generation,
+							snapshot: updateCaptureWindowSnapshot(state.snapshot, event),
+						});
 					for (const key of [
 						"WindowsChanged",
 						"WorkspacesChanged",
@@ -157,41 +244,41 @@ export class NiriCaptureWindowGuard {
 					if (initial.size === 5) complete();
 				},
 				() => {
-					this.invalidateGeneration(generation);
+					this.transition({ type: "fail", generation });
 					complete();
 				},
 			);
+			this.transition({ type: "watch", generation, monitor });
 			const [, outputs] = await Promise.all([
-				this.monitor.ready,
+				monitor.ready,
 				this.dependencies.query("outputs"),
 				initialized,
 			]);
-			if (generation !== this.generation || this.revoked) {
-				console.info(
-					`[capture-linux] "${this.windowTitle}" hides: niri changed or did not answer within 1 s`,
-				);
+			const state = this.state;
+			if (state.kind === "idle" || state.kind === "failed" || state.generation !== generation)
 				return false;
-			}
-			this.snapshot = readCaptureWindowSnapshot({ ...this.snapshot, outputs });
-			const verdict = captureWindowVerdict(this.snapshot);
-			this.admitted = verdict === "outside";
-			if (!this.admitted) console.info(`[capture-linux] "${this.windowTitle}" hides: ${verdict}`);
-			return this.admitted;
+			this.transition({
+				type: "ready",
+				generation,
+				snapshot: readCaptureWindowSnapshot({ ...state.snapshot, outputs }),
+			});
+			return this.isSafe;
 		} catch (error) {
-			if (generation === this.generation)
-				console.warn("[capture-linux] window isolation unavailable:", error);
+			this.transition({ type: "fail", generation });
+			console.warn("[capture-linux] window isolation unavailable:", error);
 			return false;
 		} finally {
 			clearTimeout(deadline);
-			if (generation === this.generation && !this.admitted) {
-				this.monitor?.close();
-				this.monitor = null;
-			}
 		}
 	}
 
 	private initialConfig(event: unknown, initial: Set<string>): boolean {
-		if (this.admitted || initial.has("ConfigLoaded") || !event || typeof event !== "object")
+		if (
+			this.state.kind !== "starting" ||
+			initial.has("ConfigLoaded") ||
+			!event ||
+			typeof event !== "object"
+		)
 			return false;
 		if (!("ConfigLoaded" in event) || Object.keys(event).length !== 1) return false;
 		const config = event.ConfigLoaded;
@@ -199,26 +286,10 @@ export class NiriCaptureWindowGuard {
 			config && typeof config === "object" && "failed" in config && config.failed === false,
 		);
 	}
-
-	private invalidateGeneration(generation: number): void {
-		if (generation === this.generation) this.invalidate();
-	}
-
 	invalidate(): void {
-		this.revoked = true;
-		if (!this.admitted) return;
-		this.admitted = false;
-		this.monitor?.close();
-		this.monitor = null;
-		this.onUnsafe();
+		this.transition({ type: "fail", generation: this.state.generation });
 	}
-
 	end(): void {
-		this.generation += 1;
-		this.admitted = false;
-		this.revoked = false;
-		this.snapshot = null;
-		this.monitor?.close();
-		this.monitor = null;
+		this.transition({ type: "end" });
 	}
 }

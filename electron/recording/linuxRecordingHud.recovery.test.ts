@@ -84,11 +84,11 @@ describe("recording HUD retry ownership and effects", () => {
 		const f = fixture();
 		f.setCapturing(true);
 		f.hud.revoke();
-		expect(f.window.webContents.send).toHaveBeenCalledTimes(1);
+		expect(f.window.webContents.send).not.toHaveBeenCalled();
 		await vi.advanceTimersByTimeAsync(499);
-		expect(f.window.webContents.send).toHaveBeenCalledTimes(1);
+		expect(f.window.webContents.send).not.toHaveBeenCalled();
 		await vi.advanceTimersByTimeAsync(1);
-		expect(f.window.webContents.send).toHaveBeenCalledTimes(2);
+		expect(f.window.webContents.send).not.toHaveBeenCalled();
 		expect(f.window.show).not.toHaveBeenCalled();
 		f.setCapturing(false);
 		await vi.advanceTimersByTimeAsync(500);
@@ -103,7 +103,7 @@ describe("recording HUD retry ownership and effects", () => {
 			f.hud.revoke();
 			f.hud[action]();
 			await vi.advanceTimersByTimeAsync(1000);
-			expect(f.window.webContents.send).toHaveBeenCalledTimes(1);
+			expect(f.window.webContents.send).not.toHaveBeenCalled();
 			expect(f.window.show).not.toHaveBeenCalled();
 			expect(vi.getTimerCount()).toBe(0);
 		}
@@ -118,7 +118,7 @@ describe("recording HUD retry ownership and effects", () => {
 		const callback = setTimer.mock.calls[0][0] as () => void;
 		f.hud.dismiss();
 		callback();
-		expect(f.window.webContents.send).toHaveBeenCalledTimes(1);
+		expect(f.window.webContents.send).not.toHaveBeenCalled();
 		expect(f.window.show).not.toHaveBeenCalled();
 		expect(warning).toHaveBeenCalledWith("[linux-hud] Illegal transition", {
 			state: "concealed",
@@ -176,7 +176,7 @@ describe("recording HUD retry ownership and effects", () => {
 		expect(f.window.show).not.toHaveBeenCalled();
 		expect(f.preview).not.toHaveBeenCalled();
 		await vi.advanceTimersByTimeAsync(500);
-		expect(f.window.webContents.send).toHaveBeenCalledTimes(2);
+		expect(f.window.webContents.send).not.toHaveBeenCalled();
 		expect(f.window.show).not.toHaveBeenCalled();
 	});
 
@@ -205,9 +205,9 @@ describe("recording HUD retry ownership and effects", () => {
 		expect(f.window.webContents.send).not.toHaveBeenCalled();
 		proof.resolve(true);
 		await start;
-		expect(f.window.webContents.send).toHaveBeenCalledTimes(1);
+		expect(f.window.webContents.send).not.toHaveBeenCalled();
 		await vi.advanceTimersByTimeAsync(500);
-		expect(f.window.webContents.send).toHaveBeenCalledTimes(2);
+		expect(f.window.webContents.send).not.toHaveBeenCalled();
 		expect(f.window.show).not.toHaveBeenCalled();
 		f.setCapturing(false);
 		f.hud.pauseCompleted();
@@ -243,7 +243,7 @@ describe("recording HUD retry ownership and effects", () => {
 			pausesAfterFinish,
 			pausesAt500ms: f.window.webContents.send.mock.calls.length,
 			shows: f.window.show.mock.calls.length,
-		}).toEqual({ accepted: true, pausesAfterFinish: 1, pausesAt500ms: 2, shows: 0 });
+		}).toEqual({ accepted: true, pausesAfterFinish: 0, pausesAt500ms: 0, shows: 0 });
 	});
 
 	it("rejects stale proof and timer events after replacement", () => {
@@ -261,4 +261,87 @@ describe("recording HUD retry ownership and effects", () => {
 		expect(lifecycle.transition({ type: "admit", owner: replacement })).toBe(true);
 		expect(warning).toHaveBeenCalledTimes(2);
 	});
+});
+
+it("gives an explicit Open app request visible feedback without transport or repeated alerts", async () => {
+	const notice = vi.fn();
+	const window = { isDestroyed: () => false, hide: vi.fn(), show: vi.fn(), focus: vi.fn() };
+	const hud = new LinuxRecordingHud(
+		"linux",
+		() => window,
+		() => true,
+		() => true,
+		async () => undefined,
+		undefined,
+		undefined,
+		undefined,
+		undefined,
+		notice,
+	);
+	hud.revoke();
+	await vi.advanceTimersByTimeAsync(60000);
+	expect(notice).not.toHaveBeenCalled();
+	expect(hud.requestControls()).toBe(true);
+	expect(notice).toHaveBeenCalledOnce();
+	await vi.advanceTimersByTimeAsync(60000);
+	expect(notice).toHaveBeenCalledOnce();
+	hud.cancelPending();
+});
+
+it("recovers a take that started covered after the covering share ends", async () => {
+	const window = { isDestroyed: () => false, hide: vi.fn(), show: vi.fn(), focus: vi.fn() };
+	let capturing = false;
+	const isolation = { begin: vi.fn(async () => false), end: vi.fn(), isSafe: vi.fn(() => false) };
+	const hud = new LinuxRecordingHud(
+		"linux",
+		() => window,
+		() => capturing,
+		() => true,
+		async () => undefined,
+		undefined,
+		undefined,
+		isolation,
+	);
+	await hud.capture(async () => {
+		capturing = true;
+		return { success: true };
+	});
+	expect(window.hide).toHaveBeenCalled();
+	expect(window.show).not.toHaveBeenCalled();
+	isolation.isSafe.mockReturnValue(true);
+	hud.restorePrivacy();
+	expect(window.show).toHaveBeenCalledOnce();
+	expect(window.focus).not.toHaveBeenCalled();
+	hud.cancelPending();
+});
+
+it("retries a failed isolation observer on its visibility timer", async () => {
+	const window = { isDestroyed: () => false, hide: vi.fn(), show: vi.fn(), focus: vi.fn() };
+	const isolation = {
+		begin: vi.fn(async () => false),
+		end: vi.fn(),
+		isSafe: vi.fn(() => false),
+		retry: vi.fn(async () => false),
+	};
+	const hud = new LinuxRecordingHud(
+		"linux",
+		() => window,
+		() => true,
+		() => true,
+		async () => undefined,
+		undefined,
+		undefined,
+		isolation,
+	);
+	hud.revoke();
+	await vi.advanceTimersByTimeAsync(0);
+	isolation.retry.mockImplementationOnce(async () => {
+		isolation.isSafe.mockReturnValue(true);
+		return true;
+	});
+	await vi.advanceTimersByTimeAsync(500);
+	expect(isolation.retry).toHaveBeenCalledTimes(2);
+	expect(window.show).toHaveBeenCalledOnce();
+	expect(vi.getTimerCount()).toBe(0);
+	hud.cancelPending();
 });

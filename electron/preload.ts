@@ -466,13 +466,14 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	startNativeLinuxRecording: (request: NativeLinuxRecordingRequest | NativeMacRecordingRequest) => {
 		return ipcRenderer.invoke("start-native-linux-recording", request);
 	},
-	pauseNativeLinuxRecording: () => {
-		return ipcRenderer.invoke("pause-native-linux-recording");
+	pauseNativeLinuxRecording: (caller = "renderer") => {
+		return ipcRenderer.invoke("pause-native-linux-recording", caller);
 	},
 	resumeNativeLinuxRecording: (
 		request?: NativeLinuxRecordingRequest | NativeMacRecordingRequest,
+		caller = "renderer",
 	) => {
-		return ipcRenderer.invoke("resume-native-linux-recording", request);
+		return ipcRenderer.invoke("resume-native-linux-recording", request, caller);
 	},
 	stopNativeLinuxRecording: (discard?: boolean) => {
 		return ipcRenderer.invoke("stop-native-linux-recording", discard);
@@ -508,11 +509,15 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	) => {
 		return ipcRenderer.invoke("select-native-linux-source", owner, cursorMode);
 	},
-	pauseNativeMacRecording: () => {
-		return ipcRenderer.invoke("pause-native-mac-recording");
+	reportNativeRecordingInterruption: (
+		owner: import("../src/lib/nativeMacRecording").NativeRecordingAppStopRequest,
+		reason: "source-inactive",
+	) => ipcRenderer.invoke("native-recording-interruption-accepted", owner, reason),
+	pauseNativeMacRecording: (caller = "renderer") => {
+		return ipcRenderer.invoke("pause-native-mac-recording", caller);
 	},
-	resumeNativeMacRecording: (request?: NativeMacRecordingRequest) => {
-		return ipcRenderer.invoke("resume-native-mac-recording", request);
+	resumeNativeMacRecording: (request?: NativeMacRecordingRequest, caller = "renderer") => {
+		return ipcRenderer.invoke("resume-native-mac-recording", request, caller);
 	},
 	prepareNativeMacContinue: (request: NativeMacRecordingRequest) => {
 		return ipcRenderer.invoke("prepare-native-mac-continue", request);
@@ -748,8 +753,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		ipcRenderer.on("hud-start-recording", listener);
 		return () => ipcRenderer.removeListener("hud-start-recording", listener);
 	},
-	onHudToggleRecordingPause: (callback: () => void) => {
-		const listener = () => callback();
+	onHudToggleRecordingPause: (callback: (caller: string) => void) => {
+		const listener = (_event: Electron.IpcRendererEvent, caller: unknown) =>
+			callback(caller === "studio" || caller === "keyboard-shortcut" ? caller : "unknown");
 		ipcRenderer.on("hud-toggle-recording-pause", listener);
 		return () => ipcRenderer.removeListener("hud-toggle-recording-pause", listener);
 	},

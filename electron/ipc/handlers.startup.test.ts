@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { BrowserWindow, desktopCapturer, powerMonitor, systemPreferences } from "electron";
+import { BrowserWindow, desktopCapturer, dialog, powerMonitor, systemPreferences } from "electron";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { normalizeRecordingSession, type RecordingSession } from "../../src/lib/recordingSession";
 import { inspectHandoffSourceMedia } from "../export/sourceHandoffMedia";
@@ -40,7 +40,7 @@ vi.mock("electron", () => {
 		},
 		clipboard: {},
 		desktopCapturer: { getSources: () => Promise.resolve([]) },
-		dialog: {},
+		dialog: { showMessageBox: vi.fn(async () => ({ response: 0 })) },
 		ipcMain: { handle: noop, on: noop, once: noop, removeAllListeners: noop, removeHandler: noop },
 		powerMonitor: { on: noop, off: noop, getCurrentThermalState: () => "nominal" },
 		powerSaveBlocker: powerBlocker,
@@ -122,6 +122,63 @@ async function journalInterruptedTake(clip: { provisionalDuration?: true } = {})
 }
 
 describe("registerIpcHandlers startup contract", () => {
+	it("shows source-loss alerts only for an accepted event from the current recording owner", async () => {
+		pinPlatform("linux");
+		const { recovery, handlers } = await register();
+		await recovery;
+		const { NativeMacRecordingService } = await import("../recording/nativeMacRecordingService");
+		const start = vi
+			.spyOn(NativeMacRecordingService.prototype, "start")
+			.mockResolvedValue({ success: true, recordingId: 77 });
+		const invokeStart = handlers.get("start-native-mac-recording");
+		const accepted = handlers.get("native-recording-interruption-accepted");
+		if (!invokeStart || !accepted) throw new Error("Missing recording handlers");
+		const owner = Object.assign(new EventEmitter(), { isDestroyed: () => false, send: vi.fn() });
+		const result: unknown = await Reflect.apply(invokeStart, undefined, [
+			{ sender: owner },
+			{ video: { fps: 30 }, webcam: { enabled: false } },
+		]);
+		if (!result || typeof result !== "object" || !("rendererStop" in result))
+			throw new Error("Missing take token");
+		vi.mocked(dialog.showMessageBox).mockClear();
+		Reflect.apply(accepted, undefined, [{ sender: {} }, result.rendererStop, "source-inactive"]);
+		Reflect.apply(accepted, undefined, [{ sender: owner }, result.rendererStop, "system-sleep"]);
+		expect(dialog.showMessageBox).not.toHaveBeenCalled();
+		Reflect.apply(accepted, undefined, [{ sender: owner }, result.rendererStop, "source-inactive"]);
+		expect(dialog.showMessageBox).toHaveBeenCalledOnce();
+		start.mockRestore();
+	});
+
+	it.each([
+		"pause",
+		"resume",
+	] as const)("logs the caller of legacy Linux %s IPC", async (action) => {
+		pinPlatform("linux");
+		const { recovery, handlers } = await register();
+		await recovery;
+		const { NativeMacRecordingService } = await import("../recording/nativeMacRecordingService");
+		const transport = vi
+			.spyOn(NativeMacRecordingService.prototype, action)
+			.mockResolvedValue({ success: true });
+		const log = vi.spyOn(console, "info").mockImplementation(() => undefined);
+		const invoke = handlers.get(`${action}-native-linux-recording`);
+		if (!invoke) throw new Error("Missing transport handler");
+		try {
+			await Reflect.apply(
+				invoke,
+				undefined,
+				action === "pause" ? [{}, "studio"] : [{}, undefined, "keyboard-shortcut"],
+			);
+			expect(log).toHaveBeenCalledWith("[recording-transport]", {
+				action: action === "pause" ? "pause" : "continue",
+				caller: action === "pause" ? "studio" : "keyboard-shortcut",
+			});
+		} finally {
+			transport.mockRestore();
+			log.mockRestore();
+		}
+	});
+
 	it("keeps optional Accessibility non-prompting across repeated Record requests", async () => {
 		pinPlatform("darwin");
 		const { handlers } = await register();
@@ -137,6 +194,7 @@ describe("registerIpcHandlers startup contract", () => {
 	});
 	beforeEach(async () => {
 		vi.resetModules();
+		vi.mocked(dialog.showMessageBox).mockClear();
 		paths.userData = await fs.mkdtemp(path.join(os.tmpdir(), "klippt-handlers-user-"));
 		paths.temp = await fs.mkdtemp(path.join(os.tmpdir(), "klippt-handlers-temp-"));
 		const { inspectHandoffSourceMedia: inspect } = await import("../export/sourceHandoffMedia");
@@ -357,6 +415,7 @@ describe("registerIpcHandlers startup contract", () => {
 				"native-mac-recording-interrupted",
 				"system-sleep",
 			);
+			expect(dialog.showMessageBox).not.toHaveBeenCalled();
 			expect(listen.mock.calls.some(([event]) => ["lock-screen"].includes(event))).toBe(false);
 		} finally {
 			running.mockRestore();

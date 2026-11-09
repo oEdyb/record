@@ -96,7 +96,7 @@ describe("Linux recording controls", () => {
 		expect(order).toEqual(["hide", "unmap", "record"]);
 		expect(hud.requestControls()).toBe(true);
 		expect(hud.requestControls()).toBe(true);
-		expect(window.webContents.send).toHaveBeenCalledExactlyOnceWith("hud-toggle-recording-pause");
+		expect(window.webContents.send).not.toHaveBeenCalled();
 		hud.pauseCompleted();
 		expect(window.show).not.toHaveBeenCalled();
 		setCapturing(false);
@@ -212,7 +212,7 @@ describe("Linux recording controls", () => {
 		await newStart;
 		expect(window.show).not.toHaveBeenCalled();
 		expect(hud.requestControls()).toBe(true);
-		expect(window.webContents.send).toHaveBeenCalledOnce();
+		expect(window.webContents.send).not.toHaveBeenCalled();
 	});
 
 	it("an old Stop completion cannot reveal a new capture transition", async () => {
@@ -246,7 +246,7 @@ describe("Linux recording controls", () => {
 		await start;
 		expect(window.show).not.toHaveBeenCalled();
 		expect(hud.requestControls()).toBe(true);
-		expect(window.webContents.send).toHaveBeenCalledOnce();
+		expect(window.webContents.send).not.toHaveBeenCalled();
 	});
 
 	it.each(["darwin", "win32"])("leaves %s untouched", async (platform) => {
@@ -315,14 +315,14 @@ it("waits for an old placement RPC before proving a replacement capture safe", a
 	expect(window.show).not.toHaveBeenCalled();
 });
 
-it("pauses and restores controls when isolation is lost during a take", () => {
+it("conceals without transport when isolation is lost during a take", () => {
 	const { hud, window, setCapturing } = setup();
 	setCapturing(true);
 	hud.revoke();
 	expect(window.hide).toHaveBeenCalledOnce();
-	expect(window.webContents.send).toHaveBeenCalledExactlyOnceWith("hud-toggle-recording-pause");
+	expect(window.webContents.send).not.toHaveBeenCalled();
 	hud.revoke();
-	expect(window.webContents.send).toHaveBeenCalledTimes(1);
+	expect(window.webContents.send).not.toHaveBeenCalled();
 	expect(window.show).not.toHaveBeenCalled();
 	setCapturing(false);
 	hud.pauseCompleted();
@@ -336,23 +336,23 @@ it("does not pause when a deliberate Hide or Studio unmaps the pill", () => {
 	hud.revoke();
 	expect(window.webContents.send).not.toHaveBeenCalled();
 	expect(hud.requestControls()).toBe(true);
-	expect(window.webContents.send).toHaveBeenCalledOnce();
+	expect(window.webContents.send).not.toHaveBeenCalled();
 	hud.cancelPending();
 });
 
-it("retries a dropped pause after transitions and stops when the writer pauses", async () => {
+it("retries visibility after transitions without changing transport", async () => {
 	vi.useFakeTimers();
 	try {
 		const { hud, window, setCapturing } = setup();
 		setCapturing(true);
 		hud.revoke();
 		await vi.advanceTimersByTimeAsync(500);
-		expect(window.webContents.send).toHaveBeenCalledTimes(2);
+		expect(window.webContents.send).not.toHaveBeenCalled();
 		setCapturing(false);
 		await vi.advanceTimersByTimeAsync(500);
 		expect(window.show).toHaveBeenCalledOnce();
 		await vi.advanceTimersByTimeAsync(1000);
-		expect(window.webContents.send).toHaveBeenCalledTimes(2);
+		expect(window.webContents.send).not.toHaveBeenCalled();
 		hud.cancelPending();
 	} finally {
 		vi.useRealTimers();
@@ -367,7 +367,7 @@ it("recovers a revocation that arrives before capture finishes transitioning", a
 		expect(window.webContents.send).not.toHaveBeenCalled();
 		return { success: true };
 	});
-	expect(window.webContents.send).toHaveBeenCalledExactlyOnceWith("hud-toggle-recording-pause");
+	expect(window.webContents.send).not.toHaveBeenCalled();
 	hud.cancelPending();
 });
 
@@ -405,7 +405,7 @@ it("retains revocation recovery when a late placement proof reports retained", a
 	expect(window.webContents.send).not.toHaveBeenCalled();
 	proof.resolve(true);
 	await capture;
-	expect(window.webContents.send).toHaveBeenCalledExactlyOnceWith("hud-toggle-recording-pause");
+	expect(window.webContents.send).not.toHaveBeenCalled();
 	expect(window.show).not.toHaveBeenCalled();
 	capturing = false;
 	hud.pauseCompleted();

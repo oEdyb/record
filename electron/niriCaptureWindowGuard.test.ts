@@ -3,6 +3,7 @@ import { NiriCaptureWindowGuard } from "./niriCaptureWindowGuard";
 
 function setup(title: "Klippt" | "Klippt Camera" = "Klippt Camera") {
 	const unsafe = vi.fn();
+	const safe = vi.fn();
 	const close = vi.fn();
 	let changed: (event: unknown) => void = () => undefined;
 	let failed: () => void = () => undefined;
@@ -48,10 +49,11 @@ function setup(title: "Klippt" | "Klippt Camera" = "Klippt Camera") {
 		onChanged({ CastsChanged: { casts: values.casts } });
 		return { ready: Promise.resolve(), close };
 	});
-	const guard = new NiriCaptureWindowGuard(title, unsafe, { query, watch }, 42);
+	const guard = new NiriCaptureWindowGuard(title, unsafe, { query, watch }, 42, safe);
 	return {
 		guard,
 		unsafe,
+		safe,
 		close,
 		query,
 		watch,
@@ -201,6 +203,108 @@ it.each([
 	state.unsafe.mockImplementation(() => hud.revoke());
 	await expect(state.guard.begin(91)).resolves.toBe(true);
 	state.event({ WindowClosed: { id: 8 } });
-	expect(send).toHaveBeenCalledTimes(deliberate ? 0 : 1);
+	expect(send).not.toHaveBeenCalled();
 	hud.cancelPending();
+});
+
+it.each([
+	false,
+	true,
+])("cover and uncover never changes user-paused=%s transport over ten minutes", async (paused) => {
+	vi.useFakeTimers();
+	const { LinuxRecordingHud } = await import("./recording/linuxRecordingHud");
+	const state = setup("Klippt");
+	const send = vi.fn();
+	const window = {
+		isDestroyed: () => false,
+		isVisible: () => true,
+		hide: vi.fn(),
+		show: vi.fn(),
+		focus: vi.fn(),
+		webContents: { send },
+	};
+	const hud = new LinuxRecordingHud(
+		"linux",
+		() => window,
+		() => !paused,
+		() => true,
+		async () => undefined,
+	);
+	state.unsafe.mockImplementation(() => hud.revoke());
+	try {
+		await expect(state.guard.begin(91)).resolves.toBe(true);
+		state.event({
+			CastStartedOrChanged: {
+				cast: {
+					...state.values.casts[0],
+					stream_id: 2,
+					pw_node_id: 92,
+					target: { Output: { name: "DP-2" } },
+				},
+			},
+		});
+		for (let cycle = 0; cycle < 20; cycle++) {
+			await vi.advanceTimersByTimeAsync(30000);
+			state.event({ CastStopped: { stream_id: 2 } });
+			state.event({
+				CastStartedOrChanged: {
+					cast: {
+						...state.values.casts[0],
+						stream_id: 2,
+						pw_node_id: 92,
+						target: { Output: { name: "DP-2" } },
+					},
+				},
+			});
+		}
+		expect(window.hide).toHaveBeenCalled();
+		expect(send).not.toHaveBeenCalled();
+	} finally {
+		hud.cancelPending();
+		state.guard.end();
+		vi.useRealTimers();
+	}
+});
+
+it("keeps observing six covers and restores the remapped HUD after each uncover", async () => {
+	const state = setup("Klippt");
+	const own = state.values.windows[0];
+	state.unsafe.mockImplementation(() => state.event({ WindowClosed: { id: own.id } }));
+	state.safe.mockImplementation(() => state.event({ WindowOpenedOrChanged: { window: own } }));
+	try {
+		await expect(state.guard.begin(91)).resolves.toBe(true);
+		for (let cycle = 0; cycle < 6; cycle++) {
+			state.event({
+				CastStartedOrChanged: {
+					cast: {
+						...state.values.casts[0],
+						stream_id: 2,
+						pw_node_id: 92,
+						target: { Output: { name: "DP-2" } },
+					},
+				},
+			});
+			expect(state.guard.isSafe).toBe(false);
+			expect(state.unsafe).toHaveBeenCalledTimes(cycle + 1);
+			state.event({ CastStopped: { stream_id: 2 } });
+			expect(state.safe).toHaveBeenCalledTimes(cycle + 1);
+			expect(state.guard.isSafe).toBe(true);
+			expect(state.close).not.toHaveBeenCalled();
+		}
+	} finally {
+		state.guard.end();
+	}
+	expect(state.close).toHaveBeenCalledOnce();
+});
+
+it("restarts a failed observer with its retained hidden-window footprint", async () => {
+	const state = setup("Klippt");
+	await expect(state.guard.begin(91)).resolves.toBe(true);
+	state.fail();
+	expect(state.guard.isSafe).toBe(false);
+	state.values.windows.splice(0);
+	await expect(state.guard.retry()).resolves.toBe(true);
+	expect(state.watch).toHaveBeenCalledTimes(2);
+	expect(state.guard.isSafe).toBe(true);
+	state.guard.end();
 });

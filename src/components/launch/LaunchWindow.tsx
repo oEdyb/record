@@ -1364,9 +1364,9 @@ export function LaunchWindow() {
 	}, [canRemovePreviousClip, clipFinalizing, handleRemovePreviousClip, saving]);
 
 	useEffect(() => {
-		return window.electronAPI?.onHudToggleRecordingPause?.(() => {
+		return window.electronAPI?.onHudToggleRecordingPause?.((caller) => {
 			if (!recording || saving || clipFinalizing || !canPauseRecording) return;
-			togglePaused();
+			togglePaused(caller);
 		});
 	}, [canPauseRecording, clipFinalizing, recording, saving, togglePaused]);
 
@@ -2302,7 +2302,7 @@ export function LaunchWindow() {
 											? t("tooltips.resumeRecording")
 											: t("tooltips.pauseRecording")
 									}
-									onClick={togglePaused}
+									onClick={() => togglePaused()}
 								/>
 								{topDock ? (
 									<>

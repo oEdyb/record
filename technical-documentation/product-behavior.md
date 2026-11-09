@@ -184,6 +184,18 @@ Changing cursor mode or losing/revoking a grant can require another chooser. Can
 an explicit choice preserves an existing paused recording, but discards the remembered
 grant so the next take asks again rather than silently recording the former source.
 
+Linux HUD privacy concealment and visibility retries never change recording transport.
+A second application sharing a monitor may hide the HUD, but cannot pause or resume a take.
+PipeWire negotiation and paused stream states keep the writer running. If the actual source
+ends during capture, save the footage and show a persistent error and native alert after the
+renderer accepts the event. Preserve a user pause and defer source-loss handling until an
+in-flight Pause or Continue settles. Sleep and low-disk interruptions retain their existing
+Pause behavior. A dead source while paused requires selection before Continue.
+The guard continues watching while concealed and restores the HUD when its last known
+output is safe again. Opening the app while controls are concealed shows a visible status
+dialog without changing transport. Pause and Continue diagnostics name the initiating
+controls, Studio, keyboard shortcut, or automatic interruption.
+
 If the selected source disappears while paused, preserve the completed clips and allow
 reselection before Continue. A stopped stream needs a freshly configured replacement; a
 filter update alone does not establish restarted capture. An explicit failed Continue that

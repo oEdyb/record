@@ -261,8 +261,10 @@ export class StudioController {
 		if (command === "record") return this.requestRecord();
 		if (command === "record-more") return;
 		if (!take?.running) return;
-		if (command === "pause" && !take.paused) this.deps.sendToPill("hud-toggle-recording-pause");
-		if (command === "resume" && take.paused) this.deps.sendToPill("hud-toggle-recording-pause");
+		if (command === "pause" && !take.paused)
+			this.deps.sendToPill("hud-toggle-recording-pause", "studio");
+		if (command === "resume" && take.paused)
+			this.deps.sendToPill("hud-toggle-recording-pause", "studio");
 		if (command === "stop") this.deps.sendToPill("stop-recording-from-tray");
 		if (command === "remove-last") this.deps.sendToPill("hud-remove-previous-clip");
 	}

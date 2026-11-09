@@ -41,6 +41,7 @@ import type {
 	NativeMacRecordingInterruption,
 	NativeMacRecordingRequest,
 	NativeMacRecordingStartResult,
+	NativeRecordingAppStopRequest,
 } from "../../src/lib/nativeMacRecording";
 import {
 	parseNativeMacRecordingClip,
@@ -804,10 +805,27 @@ function finishStopTimeline(success: boolean) {
 let activeClipBoundaryTimeline: RecordStartTimeline | null = null;
 const recordClipBoundaryTimingFile = () =>
 	path.join(app.getPath("userData"), "diagnostics", "record-pause-continue-timing.jsonl");
+function transportCaller(value: unknown): string {
+	return typeof value === "string" &&
+		[
+			"hud-controls",
+			"keyboard-shortcut",
+			"studio",
+			"renderer",
+			"interruption:screen-locked",
+			"interruption:system-sleep",
+			"interruption:source-inactive",
+			"interruption:disk-low",
+		].includes(value)
+		? value
+		: "unknown";
+}
 async function timeClipBoundary<T>(
 	action: "pause" | "continue" | "prepare" | "pick",
 	run: () => Promise<T>,
+	caller = `ipc:${action}`,
 ) {
+	console.info("[recording-transport]", { action, caller });
 	const timeline = new RecordStartTimeline(Date.now);
 	timeline.mark("ipc-received");
 	activeClipBoundaryTimeline = timeline;
@@ -827,6 +845,7 @@ async function timeClipBoundary<T>(
 		void appendRecordStartTiming(recordClipBoundaryTimingFile(), {
 			recordedAt: new Date().toISOString(),
 			action,
+			caller,
 			success,
 			steps: timeline.steps(),
 		}).catch((error) => console.warn("[capture-mac] could not log clip timing:", error));
@@ -2625,21 +2644,34 @@ export function registerIpcHandlers(
 			return result;
 		},
 	);
-	ipcMain.handle("pause-native-linux-recording", async () => {
-		const result = await invokeNativeLinux((service) => service.pause());
+	ipcMain.handle("pause-native-linux-recording", async (_, caller: unknown) => {
+		const result = await timeClipBoundary(
+			"pause",
+			() => invokeNativeLinux((service) => service.pause()),
+			transportCaller(caller),
+		);
 		recordingHud.pauseCompleted();
 		if ("success" in result && result.success) options.onTakeEvent?.({ kind: "paused" });
 		return result;
 	});
 	ipcMain.handle(
 		"resume-native-linux-recording",
-		async (_, request?: NativeLinuxRecordingRequest | NativeMacRecordingRequest) => {
+		async (
+			_,
+			request?: NativeLinuxRecordingRequest | NativeMacRecordingRequest,
+			caller?: unknown,
+		) => {
 			options.onTakeEvent?.({ kind: "resuming" });
 			await beforeNativeCapture();
-			const result = await invokeNativeLinux((service) =>
-				recordingHud.capture(() =>
-					service.resume(request ? linuxClipRecordingRequest(request) : undefined),
-				),
+			const result = await timeClipBoundary(
+				"continue",
+				() =>
+					invokeNativeLinux((service) =>
+						recordingHud.capture(() =>
+							service.resume(request ? linuxClipRecordingRequest(request) : undefined),
+						),
+					),
+				transportCaller(caller),
 			);
 			options.onTakeEvent?.({ kind: "changed" });
 			return result;
@@ -3004,7 +3036,13 @@ export function registerIpcHandlers(
 		app.once("will-quit", () => powerMonitor.off("suspend", onSuspend));
 	}
 
-	const hudCaptureGuard = new NiriCaptureWindowGuard("Klippt", () => recordingHud.revoke());
+	const hudCaptureGuard = new NiriCaptureWindowGuard(
+		"Klippt",
+		() => recordingHud.revoke(),
+		undefined,
+		process.pid,
+		() => recordingHud.restorePrivacy(),
+	);
 	const recordingHud = new LinuxRecordingHud(
 		process.platform,
 		getMainWindow,
@@ -3020,8 +3058,21 @@ export function registerIpcHandlers(
 		{
 			begin: () => hudCaptureGuard.begin(linuxClipMetadata?.pipeWireNodeId),
 			end: () => hudCaptureGuard.end(),
+			isSafe: () => hudCaptureGuard.isSafe,
+			retry: () => hudCaptureGuard.retry(),
 		},
 		() => !options.studioOwnsControls?.(),
+		() => {
+			void dialog.showMessageBox({
+				type: "info",
+				title: "Recording controls",
+				message: "Recording is continuing. Controls are hidden from screen sharing.",
+				detail: hudCaptureGuard.recoveringVisibility
+					? "Controls return when their screen is no longer captured. Use the Pause recording shortcut or Stop from the tray."
+					: "Automatic control recovery is unavailable. Use the Pause recording shortcut or Stop from the tray.",
+				buttons: ["OK"],
+			});
+		},
 	);
 	const invalidateHudCapture = () => hudCaptureGuard.invalidate();
 	screen.on("display-removed", invalidateHudCapture);
@@ -3245,12 +3296,32 @@ export function registerIpcHandlers(
 			return result;
 		},
 	);
-	ipcMain.handle("pause-native-mac-recording", async () => {
+	ipcMain.handle(
+		"native-recording-interruption-accepted",
+		(event, owner: NativeRecordingAppStopRequest, reason: unknown) => {
+			if (
+				process.platform !== "linux" ||
+				reason !== "source-inactive" ||
+				!owner ||
+				!rendererRecordingStop.owns(event.sender, owner.recordingId, owner.token)
+			)
+				return;
+			void dialog.showMessageBox({
+				type: "error",
+				title: "Recording interrupted",
+				message: "The recording source disconnected. Captured footage is being saved.",
+				buttons: ["OK"],
+			});
+		},
+	);
+	ipcMain.handle("pause-native-mac-recording", async (_, caller: unknown) => {
 		const workloadId = activeCaptureWorkloadId;
 		if (workloadId) workloadTelemetry.startPhase(workloadId, "clip-finalization");
 		const startedAt = Date.now();
-		const result = await timeClipBoundary("pause", () =>
-			invokeNativeMac(() => getNativeMacRecordingService().pause()),
+		const result = await timeClipBoundary(
+			"pause",
+			() => invokeNativeMac(() => getNativeMacRecordingService().pause()),
+			transportCaller(caller),
 		);
 		if (workloadId) {
 			workloadTelemetry.endPhase(workloadId, "clip-finalization");
@@ -3292,41 +3363,47 @@ export function registerIpcHandlers(
 		},
 	);
 
-	ipcMain.handle("resume-native-mac-recording", async (_, request?: NativeMacRecordingRequest) => {
-		options.onTakeEvent?.({ kind: "resuming" });
-		await beforeNativeCapture();
-		const result = await timeClipBoundary("continue", () =>
-			invokeNativeMac(() =>
-				recordingHud.capture(() => getNativeMacRecordingService().resume(request)),
-			),
-		);
-		options.onTakeEvent?.({ kind: "changed" });
-		if (activeCaptureWorkloadId && "success" in result && result.success) {
-			if (request) {
-				workloadTelemetry.configure(activeCaptureWorkloadId, {
-					requestedVideoFps: request.video.fps,
-					requestedCameraFps: request.webcam.enabled ? request.webcam.fps : undefined,
-				});
-				workloadTelemetry.observe(
-					activeCaptureWorkloadId,
-					"capture.requested_fps",
-					request.video.fps,
-				);
-				if (request.webcam.enabled) {
-					workloadTelemetry.recordResourceSnapshot(activeCaptureWorkloadId, {
-						cameraPressure: "unknown",
+	ipcMain.handle(
+		"resume-native-mac-recording",
+		async (_, request?: NativeMacRecordingRequest, caller?: unknown) => {
+			options.onTakeEvent?.({ kind: "resuming" });
+			await beforeNativeCapture();
+			const result = await timeClipBoundary(
+				"continue",
+				() =>
+					invokeNativeMac(() =>
+						recordingHud.capture(() => getNativeMacRecordingService().resume(request)),
+					),
+				transportCaller(caller),
+			);
+			options.onTakeEvent?.({ kind: "changed" });
+			if (activeCaptureWorkloadId && "success" in result && result.success) {
+				if (request) {
+					workloadTelemetry.configure(activeCaptureWorkloadId, {
+						requestedVideoFps: request.video.fps,
+						requestedCameraFps: request.webcam.enabled ? request.webcam.fps : undefined,
 					});
 					workloadTelemetry.observe(
 						activeCaptureWorkloadId,
-						"camera.requested_fps",
-						request.webcam.fps,
+						"capture.requested_fps",
+						request.video.fps,
 					);
+					if (request.webcam.enabled) {
+						workloadTelemetry.recordResourceSnapshot(activeCaptureWorkloadId, {
+							cameraPressure: "unknown",
+						});
+						workloadTelemetry.observe(
+							activeCaptureWorkloadId,
+							"camera.requested_fps",
+							request.webcam.fps,
+						);
+					}
 				}
+				workloadTelemetry.event(activeCaptureWorkloadId, "capture-resumed");
 			}
-			workloadTelemetry.event(activeCaptureWorkloadId, "capture-resumed");
-		}
-		return result;
-	});
+			return result;
+		},
+	);
 	ipcMain.handle("prepare-native-mac-continue", (_, request: NativeMacRecordingRequest) =>
 		timeClipBoundary("prepare", () =>
 			invokeNativeMac(() => getNativeMacRecordingService().prepareResume(request)),

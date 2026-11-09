@@ -1,14 +1,7 @@
-//! What the capture stream going away means for a take.
-//!
-//! macOS pauses a take when the recorded window closes: the helper reports
-//! `source-inactive`, the app pauses (finalizing the clip), and Continue works once
-//! a source is chosen again. This module is the Linux half of that contract.
-//!
-//! It is a pure state machine so it can be tested without a portal, a PipeWire
-//! stream, an encoder or a GPU. **It has not been exercised against a real stream.**
-//! Which PipeWire state a compositor produces when a window closes (`unconnected`
-//! with or without an error string) is assumed, not observed; both are treated as
-//! source loss once a clip-native take has started.
+//! Classifies terminal capture-source loss separately from stream negotiation.
+//! The app saves a live take loudly, or preserves a user pause for reselection.
+//! PipeWire can remove a producer without disconnecting its consumer stream;
+//! the C shim also observes registry removal of the selected source node.
 
 /// What the main loop does with a state change of the current stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,7 +12,7 @@ pub enum Outcome {
     /// single-file protocol keep this.
     Fatal,
     /// The source is gone but the take is intact: warn `source-inactive`, let the
-    /// app pause, and refuse Continue until a replacement source is adopted.
+    /// app save a live take, and refuse Continue until a replacement source is adopted.
     SourceLost,
 }
 
@@ -35,7 +28,7 @@ pub struct Take {
     pub started: bool,
 }
 
-/// The warning the app maps to its pause-and-toast flow (the macOS helper's code).
+/// The source-loss warning shared with the recording service.
 pub fn inactive_warning(error: Option<&str>) -> crate::events::Event {
     crate::events::Event::Warning {
         code: "source-inactive".into(),
@@ -103,7 +96,7 @@ mod tests {
     }
 
     #[test]
-    fn unconnected_after_start_pauses_instead_of_ending() {
+    fn unconnected_after_start_reports_source_loss() {
         let mut health = SourceHealth::default();
         assert_eq!(
             health.on_stream_state("unconnected", None, running()),
