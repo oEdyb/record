@@ -11,6 +11,7 @@ import { exportPrivateTake } from "./recording-test-export.mjs";
 import { acquireRecordingTestLock } from "./recording-test-lock.mjs";
 import { selectedMicrophoneLoss } from "./recording-test-microphone-loss.mjs";
 import { recordingOverlap } from "./recording-test-overlap.mjs";
+import { PortalPickerRequests } from "./recording-test-picker.mjs";
 import { recordingSourceLoss } from "./recording-test-source-loss.mjs";
 
 function verifyClip(clip, { camera = true, minimumDuration = 0.1 } = {}) {
@@ -138,6 +139,7 @@ if (!process.argv.includes("--worker")) {
 			);
 
 			let workerActive = true;
+			const pickerRequests = new PortalPickerRequests();
 			child.stdout.on("data", (data) => {
 				process.stdout.write(data);
 				if (data.toString().includes("ACK_PRIVATE_ALERT")) {
@@ -183,9 +185,10 @@ if (!process.argv.includes("--worker")) {
 					data.toString().includes("SELECT_PRIVATE_MONITOR")
 				) {
 					const monitor = data.toString().includes("SELECT_PRIVATE_MONITOR");
+					const owner = pickerRequests.start();
 					let attempts = 0;
 					const choose = () => {
-						if (!workerActive) return;
+						if (!workerActive || !pickerRequests.owns(owner)) return;
 						const windows = JSON.parse(
 							execFileSync(
 								"agent-lab",
@@ -214,6 +217,7 @@ if (!process.argv.includes("--worker")) {
 								String(y + 250),
 							]);
 							execFileSync("agent-lab", ["input", lab, "click"]);
+							pickerRequests.transition({ type: "finish", owner });
 							return;
 						}
 
@@ -227,7 +231,7 @@ if (!process.argv.includes("--worker")) {
 						execFileSync("agent-lab", ["input", lab, "click"]);
 						execFileSync("agent-lab", ["input", lab, "text", "Private recording fixture"]);
 						setTimeout(() => {
-							if (!workerActive) return;
+							if (!workerActive || !pickerRequests.owns(owner)) return;
 							execFileSync("agent-lab", [
 								"input",
 								lab,
@@ -236,6 +240,7 @@ if (!process.argv.includes("--worker")) {
 								String(y + 250),
 							]);
 							execFileSync("agent-lab", ["input", lab, "click"]);
+							pickerRequests.transition({ type: "finish", owner });
 						}, 300);
 					};
 					setTimeout(choose, 500);
